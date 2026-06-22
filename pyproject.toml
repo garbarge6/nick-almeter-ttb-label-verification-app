@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "openai>=2.43.0",
     "pillow>=12.2.0",
+    "python-multipart>=0.0.32",
     "uvicorn[standard]>=0.30.0",
 ]
 
