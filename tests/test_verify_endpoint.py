@@ -11,6 +11,7 @@ from app.comparison.models import ExtractedLabel
 from app.main import app
 from app.vision import (
     VisionImageError,
+    VisionServiceAuthError,
     VisionServiceError,
     VisionServiceTimeout,
     VisionServiceValidationError,
@@ -251,6 +252,7 @@ def test_oversized_image_returns_413(client: TestClient) -> None:
         (VisionImageError("bad image"), 400, "invalid_image"),
         (VisionServiceTimeout("slow"), 504, "vision_timeout"),
         (VisionServiceValidationError("bad response"), 502, "vision_invalid_response"),
+        (VisionServiceAuthError("bad key"), 502, "vision_auth_error"),
         (VisionServiceError("down"), 502, "vision_service_error"),
         (RuntimeError("boom"), 500, "internal_error"),
     ],

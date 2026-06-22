@@ -1,13 +1,17 @@
 import base64
+import logging
 import os
+import time
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import ValidationError
 
 from app.comparison.models import ExtractedLabel
 from app.vision.preprocessing import ImagePreprocessingError, preprocess_image
 from app.vision.prompts import VISION_SYSTEM_PROMPT, VISION_USER_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 class VisionServiceError(RuntimeError):
@@ -22,6 +26,10 @@ class VisionServiceValidationError(VisionServiceError):
     pass
 
 
+class VisionServiceAuthError(VisionServiceError):
+    pass
+
+
 class VisionImageError(VisionServiceError):
     pass
 
@@ -30,8 +38,8 @@ class VisionImageError(VisionServiceError):
 class VisionSettings:
     model: str = "gpt-4o-mini"
     timeout_seconds: float = 4.0
-    image_max_side: int = 1600
-    jpeg_quality: int = 82
+    image_max_side: int = 1200
+    jpeg_quality: int = 76
 
     @classmethod
     def from_env(cls) -> "VisionSettings":
@@ -59,6 +67,16 @@ class VisionClientProtocol(Protocol):
 class OpenAIVisionClient:
     def __init__(self, api_key: str | None = None) -> None:
         self._api_key = api_key
+        self._client: Any | None = None
+        self._timeout_seconds: float | None = None
+
+    def _get_client(self, timeout_seconds: float) -> Any:
+        if self._client is None or self._timeout_seconds != timeout_seconds:
+            from openai import OpenAI
+
+            self._client = OpenAI(api_key=self._api_key, timeout=timeout_seconds)
+            self._timeout_seconds = timeout_seconds
+        return self._client
 
     def extract_label(
         self,
@@ -69,9 +87,7 @@ class OpenAIVisionClient:
         image_data_url: str,
         timeout_seconds: float,
     ) -> object:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=self._api_key, timeout=timeout_seconds)
+        client = self._get_client(timeout_seconds)
         return client.responses.parse(
             model=model,
             input=[
@@ -129,20 +145,24 @@ class VisionService:
         self.client = client or OpenAIVisionClient()
 
     def extract_label(self, image_bytes: bytes, filename: str | None = None) -> ExtractedLabel:
-        del filename
+        total_start = time.perf_counter()
+        original_bytes = len(image_bytes)
 
         try:
+            preprocess_start = time.perf_counter()
             image = preprocess_image(
                 image_bytes,
                 max_side=self.settings.image_max_side,
                 jpeg_quality=self.settings.jpeg_quality,
             )
+            preprocess_ms = _elapsed_ms(preprocess_start)
         except ImagePreprocessingError as exc:
             raise VisionImageError("Invalid or unsupported image.") from exc
 
         image_data_url = _build_image_data_url(image.content, image.media_type)
 
         try:
+            vision_start = time.perf_counter()
             response = self.client.extract_label(
                 model=self.settings.model,
                 system_prompt=VISION_SYSTEM_PROMPT,
@@ -150,14 +170,39 @@ class VisionService:
                 image_data_url=image_data_url,
                 timeout_seconds=self.settings.timeout_seconds,
             )
+            vision_ms = _elapsed_ms(vision_start)
         except TimeoutError as exc:
             raise VisionServiceTimeout("Vision model request timed out.") from exc
         except Exception as exc:
-            if exc.__class__.__name__ in {"APITimeoutError", "TimeoutException"}:
+            class_name = exc.__class__.__name__
+            if class_name in {"APITimeoutError", "TimeoutException"}:
                 raise VisionServiceTimeout("Vision model request timed out.") from exc
+            if class_name in {"AuthenticationError", "PermissionDeniedError"}:
+                raise VisionServiceAuthError("Vision service is not configured or authorized.") from exc
             raise VisionServiceError("Vision model request failed.") from exc
 
-        return _coerce_extracted_label(response)
+        parsed = _coerce_extracted_label(response)
+        total_ms = _elapsed_ms(total_start)
+        logger.info(
+            "vision_extract_completed",
+            extra={
+                "filename": filename,
+                "model": self.settings.model,
+                "timeout_seconds": self.settings.timeout_seconds,
+                "preprocess_ms": preprocess_ms,
+                "vision_ms": vision_ms,
+                "total_ms": total_ms,
+                "image_original_bytes": original_bytes,
+                "image_processed_bytes": len(image.content),
+                "image_original_size": image.original_size,
+                "image_processed_size": image.processed_size,
+            },
+        )
+        return parsed
+
+
+def _elapsed_ms(start: float) -> int:
+    return int((time.perf_counter() - start) * 1000)
 
 
 def _build_image_data_url(image_bytes: bytes, media_type: str) -> str:

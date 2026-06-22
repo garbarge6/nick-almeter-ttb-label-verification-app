@@ -55,6 +55,15 @@ BATCH_CONCURRENCY_LIMIT=3
 ```
 
 Each label gets its own result. One bad label does not fail the whole batch.
+## Phase 6 live checklist
+
+After deploying, run the hardening checklist against the live URL:
+
+```powershell
+uv run python scripts/run_phase6_live_checklist.py https://YOUR-LIVE-URL images\jim.png --runs 3
+```
+
+The report includes single-label wall-clock latency, API latency, validation errors, imperfect-image behavior, and batch summary counts.
 ## Render deploy
 
 Create a Render Web Service from this repo.

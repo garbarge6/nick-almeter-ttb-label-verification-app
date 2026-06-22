@@ -25,3 +25,10 @@ def test_preprocessing_downsizes_and_reencodes_to_jpeg() -> None:
 def test_preprocessing_rejects_invalid_image_bytes() -> None:
     with pytest.raises(ImagePreprocessingError):
         preprocess_image(b"not an image")
+
+
+def test_preprocessing_tuned_defaults_keep_image_smaller() -> None:
+    image = preprocess_image(make_image_bytes(), max_side=1200, jpeg_quality=76)
+
+    assert image.processed_size == (1200, 600)
+    assert len(image.content) < len(make_image_bytes())

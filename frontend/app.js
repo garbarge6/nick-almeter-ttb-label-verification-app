@@ -104,6 +104,8 @@ function setMode(mode) {
   const isSingle = mode === "single";
   singleTab.classList.toggle("is-active", isSingle);
   batchTab.classList.toggle("is-active", !isSingle);
+  singleTab.setAttribute("aria-selected", String(isSingle));
+  batchTab.setAttribute("aria-selected", String(!isSingle));
   singlePanel.hidden = !isSingle;
   batchPanel.hidden = isSingle;
   clearResults();
@@ -156,7 +158,7 @@ function addBatchItem() {
   item.innerHTML = `
     <div class="batch-item-header">
       <h3>Label ${batchItemsContainer.children.length + 1}</h3>
-      <button class="remove-button" type="button">Remove</button>
+      <button class="remove-button" type="button" aria-label="Remove this label">Remove</button>
     </div>
     <div class="field image-field">
       <label>Label Image</label>

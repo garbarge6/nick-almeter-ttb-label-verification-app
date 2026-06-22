@@ -14,6 +14,7 @@ from app.comparison.engine import verify_label
 from app.comparison.models import ApplicationData, ExtractedLabel, VerificationResult
 from app.vision import (
     VisionImageError,
+    VisionServiceAuthError,
     VisionService,
     VisionServiceError,
     VisionServiceTimeout,
@@ -279,6 +280,11 @@ async def verify(
         log_verify_finished(latency_ms=latency_ms, error_code="vision_invalid_response")
         log_exception_details("vision_invalid_response", latency_ms, exc)
         raise error_response(502, "vision_invalid_response", "We could not understand the label extraction result. Please try another photo.") from exc
+    except VisionServiceAuthError as exc:
+        latency_ms = elapsed_ms()
+        log_verify_finished(latency_ms=latency_ms, error_code="vision_auth_error")
+        log_exception_details("vision_auth_error", latency_ms, exc)
+        raise error_response(502, "vision_auth_error", "The label reading service is not configured. Please check the API key.") from exc
     except VisionServiceError as exc:
         latency_ms = elapsed_ms()
         log_verify_finished(latency_ms=latency_ms, error_code="vision_service_error")
@@ -366,6 +372,15 @@ async def process_batch_item(
             status="FAILED",
             latency_ms=elapsed_ms(),
             error=ErrorDetail(code="vision_invalid_response", message="We could not understand the label extraction result. Please try another photo."),
+        )
+    except VisionServiceAuthError as exc:
+        log_exception_details("vision_auth_error", elapsed_ms(), exc)
+        return BatchItemResult(
+            client_id=item.client_id,
+            filename=filename,
+            status="FAILED",
+            latency_ms=elapsed_ms(),
+            error=ErrorDetail(code="vision_auth_error", message="The label reading service is not configured. Please check the API key."),
         )
     except VisionServiceError as exc:
         log_exception_details("vision_service_error", elapsed_ms(), exc)

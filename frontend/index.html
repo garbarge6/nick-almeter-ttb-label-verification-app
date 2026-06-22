@@ -13,12 +13,12 @@
         <h1>TTB Label Verification</h1>
       </header>
 
-      <nav class="mode-tabs" aria-label="Choose verification mode">
-        <button id="single-tab" class="mode-tab is-active" type="button">Single Label</button>
-        <button id="batch-tab" class="mode-tab" type="button">Batch</button>
+      <nav class="mode-tabs" role="tablist" aria-label="Choose verification mode">
+        <button id="single-tab" class="mode-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="single-panel">Single Label</button>
+        <button id="batch-tab" class="mode-tab" type="button" role="tab" aria-selected="false" aria-controls="batch-panel">Batch</button>
       </nav>
 
-      <section id="single-panel" class="form-section" aria-labelledby="form-title">
+      <section id="single-panel" class="form-section" role="tabpanel" aria-labelledby="single-tab">
         <h2 id="form-title">Check One Label</h2>
 
         <form id="verify-form" novalidate>
@@ -71,7 +71,7 @@
         </form>
       </section>
 
-      <section id="batch-panel" class="form-section" aria-labelledby="batch-title" hidden>
+      <section id="batch-panel" class="form-section" role="tabpanel" aria-labelledby="batch-tab" hidden>
         <h2 id="batch-title">Check a Batch</h2>
         <div id="batch-message" class="message" role="alert" hidden></div>
         <div id="batch-items" class="batch-items"></div>
@@ -81,7 +81,7 @@
         </div>
       </section>
 
-      <section id="loading-state" class="loading-state" aria-live="polite" hidden>
+      <section id="loading-state" class="loading-state" aria-live="polite" aria-busy="true" hidden>
         <div class="loader" aria-hidden="true"></div>
         <div>
           <h2 id="loading-title">Checking the label...</h2>
