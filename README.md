@@ -25,6 +25,20 @@ The frontend should show the JSON response from `/health`.
 
 Copy `.env.example` to `.env` for local values only. Real secrets must stay in environment variables and must never be committed.
 
+## Vision sample
+
+After setting `OPENAI_API_KEY` in your environment, run the vision extractor against a local label image:
+
+```powershell
+$env:OPENAI_API_KEY = (Get-Content .env | Where-Object { $_ -match '^OPENAI_API_KEY=' } | ForEach-Object { ($_ -split '=', 2)[1].Trim() })
+uv run python scripts/run_vision_sample.py images\jim.png
+```
+
+For an offline smoke check that does not call the API:
+
+```powershell
+uv run python scripts/run_vision_sample.py images\jim.png --fake
+```
 ## Render deploy
 
 Create a Render Web Service from this repo.
