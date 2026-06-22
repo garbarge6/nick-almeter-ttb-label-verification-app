@@ -4,8 +4,8 @@ A stateless proof-of-concept for checking alcohol label images against applicati
 
 ## Live Demo
 
-- Live URL: **TODO: add deployed URL before submission**
-- Health check: **TODO: add deployed URL before submission** `/health`
+- Live URL: https://nick-almeter-ttb-label-verification-app.onrender.com
+- Health check: https://nick-almeter-ttb-label-verification-app.onrender.com/health
 
 Do not submit until the live URL is filled in and the live checklist below has been run.
 
@@ -252,7 +252,7 @@ processed bytes median: 202,986
 Live single-label latency must be measured after deployment with:
 
 ```powershell
-uv run python scripts/run_phase6_live_checklist.py https://YOUR-LIVE-URL path\to\sample-label.png --runs 3
+uv run python scripts/run_phase6_live_checklist.py https://nick-almeter-ttb-label-verification-app.onrender.com path\to\sample-label.png --runs 3
 ```
 
 ## Test Images
@@ -284,11 +284,24 @@ empty submit: readable 422
 batch summary: total 3, passed 1, needs_review 1, failed_to_process 1
 ```
 
-Live checklist:
+Live checklist against Render:
 
 ```text
-TODO: run after deployed URL is available
+Live URL: https://nick-almeter-ttb-label-verification-app.onrender.com
+Single-label runs, wall ms: 11099, 4084, 4667
+Single-label p50 wall ms: 4667
+Single-label max wall ms: 11099
+API latency ms: 9248, 3369, 4010
+Single-label verdicts: NEEDS_REVIEW, NEEDS_REVIEW, NEEDS_REVIEW
+Under 5000 ms for all runs: false
+Mismatch: 200, NEEDS_REVIEW, 8337 ms
+Imperfect image: 200, NEEDS_REVIEW, 3451 ms
+Wrong file type: 400, readable invalid_file_type error
+Empty submit: 422, readable invalid_request error
+Batch summary: total 3, passed 0, needs_review 2, failed_to_process 1, latency 5154 ms
 ```
+
+Performance note: two warm single-label runs completed under 5 seconds, but the first run took 11.1 seconds. The strict under-5-second gate is not fully demonstrated on Render yet, likely due to cold start and/or first vision request overhead.
 
 ## Security
 

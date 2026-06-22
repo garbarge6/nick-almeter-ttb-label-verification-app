@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -7,6 +8,9 @@ from statistics import median
 
 import httpx
 from PIL import Image, ImageFilter
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 from app.comparison.engine import GOVERNMENT_WARNING
 
