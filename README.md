@@ -8,8 +8,8 @@ Install `uv`, then run:
 
 ```powershell
 uv sync
-uv run pytest
-uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uv run python -m pytest
+uv run python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Open:

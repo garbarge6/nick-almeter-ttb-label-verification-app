@@ -9,15 +9,79 @@
   </head>
   <body>
     <main class="page">
-      <section class="panel" aria-labelledby="title">
-        <p class="eyebrow">Phase 0</p>
-        <h1 id="title">TTB Label Verification</h1>
-        <p class="intro">The app is deployed and ready for the first verification features.</p>
+      <header class="page-header">
+        <h1>TTB Label Verification</h1>
+      </header>
 
-        <div class="status-box" aria-live="polite">
-          <div class="status-label">Backend status</div>
-          <pre id="health-output">Checking...</pre>
+      <section class="form-section" aria-labelledby="form-title">
+        <h2 id="form-title">Check One Label</h2>
+
+        <form id="verify-form" novalidate>
+          <div class="field image-field">
+            <label for="label-image">Label Image</label>
+            <input id="label-image" name="image" type="file" accept="image/png,image/jpeg,image/webp">
+            <div id="selected-file" class="selected-file" aria-live="polite">No image selected</div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="brand-name">Brand Name</label>
+              <input id="brand-name" name="brand_name" type="text" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="product-class">Product Class</label>
+              <input id="product-class" name="product_class" type="text" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="producer-name">Producer Name</label>
+              <input id="producer-name" name="producer_name" type="text" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="country-origin">Country of Origin</label>
+              <input id="country-origin" name="country_of_origin" type="text" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="alcohol-percent">Alcohol %</label>
+              <input id="alcohol-percent" name="abv" type="text" autocomplete="off">
+            </div>
+
+            <div class="field">
+              <label for="bottle-size">Bottle Size</label>
+              <input id="bottle-size" name="net_contents" type="text" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="government-warning">Government Warning</label>
+            <textarea id="government-warning" name="government_warning" rows="6"></textarea>
+          </div>
+
+          <div id="form-message" class="message" role="alert" hidden></div>
+
+          <button id="submit-button" class="submit-button" type="submit">CHECK LABEL</button>
+        </form>
+      </section>
+
+      <section id="loading-state" class="loading-state" aria-live="polite" hidden>
+        <div class="loader" aria-hidden="true"></div>
+        <div>
+          <h2>Checking the label...</h2>
+          <p>This may take a few seconds.</p>
         </div>
+      </section>
+
+      <section id="results-section" class="results-section" aria-labelledby="results-title" hidden>
+        <div id="verdict-banner" class="verdict-banner">
+          <h2 id="results-title">Result</h2>
+          <div id="verdict-text" class="verdict-text"></div>
+          <div id="latency-text" class="latency-text"></div>
+        </div>
+
+        <div id="field-results" class="field-results"></div>
       </section>
     </main>
   </body>

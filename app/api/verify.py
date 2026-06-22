@@ -1,5 +1,7 @@
 import json
 import logging
+import traceback
+from pathlib import Path
 import time
 from typing import Any
 
@@ -18,6 +20,7 @@ from app.vision import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+DEBUG_LOG_PATH = Path("logs/verify-debug.log")
 
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -119,6 +122,24 @@ def log_verify_finished(
     )
 
 
+def log_exception_details(error_code: str, latency_ms: int, exc: Exception) -> None:
+    DEBUG_LOG_PATH.parent.mkdir(exist_ok=True)
+    debug_text = "\n".join(
+        [
+            "--- verify exception ---",
+            f"error_code={error_code}",
+            f"latency_ms={latency_ms}",
+            "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+        ]
+    )
+    logger.exception(
+        "verify_exception",
+        extra={"latency_ms": latency_ms, "error_code": error_code},
+    )
+    with DEBUG_LOG_PATH.open("a", encoding="utf-8") as log_file:
+        log_file.write(debug_text)
+        log_file.write("\n")
+
 @router.post(
     "/verify",
     response_model=VerifyResponse,
@@ -167,20 +188,25 @@ async def verify(
     except VisionImageError as exc:
         latency_ms = elapsed_ms()
         log_verify_finished(latency_ms=latency_ms, error_code="invalid_image")
+        log_exception_details("invalid_image", latency_ms, exc)
         raise error_response(400, "invalid_image", "We could not read this image. Please try another photo.") from exc
     except VisionServiceTimeout as exc:
         latency_ms = elapsed_ms()
         log_verify_finished(latency_ms=latency_ms, error_code="vision_timeout")
+        log_exception_details("vision_timeout", latency_ms, exc)
         raise error_response(504, "vision_timeout", "We could not read this image quickly enough. Please try another photo.") from exc
     except VisionServiceValidationError as exc:
         latency_ms = elapsed_ms()
         log_verify_finished(latency_ms=latency_ms, error_code="vision_invalid_response")
+        log_exception_details("vision_invalid_response", latency_ms, exc)
         raise error_response(502, "vision_invalid_response", "We could not understand the label extraction result. Please try another photo.") from exc
     except VisionServiceError as exc:
         latency_ms = elapsed_ms()
         log_verify_finished(latency_ms=latency_ms, error_code="vision_service_error")
+        log_exception_details("vision_service_error", latency_ms, exc)
         raise error_response(502, "vision_service_error", "The label reading service is unavailable. Please try again.") from exc
     except Exception as exc:
         latency_ms = elapsed_ms()
         log_verify_finished(latency_ms=latency_ms, error_code="internal_error")
+        log_exception_details("internal_error", latency_ms, exc)
         raise error_response(500, "internal_error", "Something went wrong. Please try again.") from exc
