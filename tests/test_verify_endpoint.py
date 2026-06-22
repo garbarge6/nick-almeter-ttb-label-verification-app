@@ -236,6 +236,19 @@ def test_missing_required_application_field_returns_readable_422(client: TestCli
     assert response.json()["detail"]["error"]["code"] == "invalid_application_data"
 
 
+def test_blank_required_application_field_returns_readable_422(client: TestClient) -> None:
+    override_vision(FakeVisionService())
+
+    response = post_verify(
+        client,
+        application_data=application_payload(brand_name="   "),
+        image_bytes=make_image_bytes(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"]["code"] == "invalid_application_data"
+
+
 def test_oversized_image_returns_413(client: TestClient) -> None:
     override_vision(FakeVisionService())
     image_bytes = b"0" * (8 * 1024 * 1024 + 1)

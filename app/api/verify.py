@@ -1,4 +1,5 @@
 import asyncio
+from functools import lru_cache
 import json
 import logging
 import os
@@ -75,6 +76,7 @@ class BatchVerifyResponse(BaseModel):
     results: list[BatchItemResult]
 
 
+@lru_cache(maxsize=1)
 def get_vision_service() -> VisionService:
     return VisionService()
 
@@ -245,7 +247,11 @@ async def verify(
     try:
         image_bytes = await read_valid_image(image)
         application = parse_application_data(application_data)
-        extracted = vision_service.extract_label(image_bytes, filename=image.filename)
+        extracted = await asyncio.to_thread(
+            vision_service.extract_label,
+            image_bytes,
+            image.filename,
+        )
         verification = verify_label(application, extracted)
         latency_ms = elapsed_ms()
         failures = [field.field for field in verification.fields if field.status == "FAIL"]

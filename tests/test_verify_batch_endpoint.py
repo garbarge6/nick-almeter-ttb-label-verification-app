@@ -186,6 +186,21 @@ def test_batch_malformed_items_returns_readable_400() -> None:
     }
 
 
+def test_batch_blank_required_field_returns_readable_422() -> None:
+    app.dependency_overrides[get_vision_service] = lambda: BatchFakeVisionService([extracted_label()])
+    client = TestClient(app)
+    items = batch_items(1)
+    items[0]["application_data"] = application_payload(brand_name="")
+
+    response = post_batch(client, items, image_files(1))
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == {
+        "code": "invalid_batch",
+        "message": "Each batch item needs an image and all application fields.",
+    }
+
+
 def test_batch_larger_than_max_returns_readable_413() -> None:
     app.dependency_overrides[get_vision_service] = lambda: BatchFakeVisionService([extracted_label()])
     client = TestClient(app)

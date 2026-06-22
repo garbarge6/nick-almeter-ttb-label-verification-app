@@ -323,7 +323,7 @@ git ls-files .env
 git diff --cached --name-only
 git diff --cached --name-only | Select-String -Pattern '(^|/)\.env$|\.env\.'
 git diff --cached | Select-String -Pattern 'sk-|OPENAI_API_KEY=sk|api[_-]?key\s*=|secret\s*=|token\s*=|password\s*='
-rg -n --hidden --glob '!.git/**' --glob '!logs/**' --glob '!.venv/**' "sk-|OPENAI_API_KEY=sk|api[_-]?key\s*=|secret\s*=|token\s*=|password\s*=" .
+rg -n --hidden --glob '!.git/**' --glob '!logs/**' --glob '!.venv/**' --glob '!.env' --glob '!.env.*' "sk-|OPENAI_API_KEY=sk|api[_-]?key\s*=|secret\s*=|token\s*=|password\s*=" .
 rg -n "YOUR-LIVE-URL|<service>|TODO|TBD" README.md
 ```
 

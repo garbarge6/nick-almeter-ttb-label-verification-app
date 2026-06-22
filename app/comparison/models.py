@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 FieldStatus = Literal["PASS", "FAIL"]
@@ -15,6 +15,21 @@ class ApplicationData(BaseModel):
     abv: str | float
     net_contents: str
     government_warning: str
+
+    @field_validator(
+        "brand_name",
+        "product_class",
+        "producer_name",
+        "country_of_origin",
+        "abv",
+        "net_contents",
+        "government_warning",
+    )
+    @classmethod
+    def required_fields_must_not_be_blank(cls, value: str | float) -> str | float:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("Field is required.")
+        return value
 
 
 class ExtractedLabel(BaseModel):

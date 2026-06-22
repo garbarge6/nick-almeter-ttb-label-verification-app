@@ -65,8 +65,7 @@ class VisionClientProtocol(Protocol):
 
 
 class OpenAIVisionClient:
-    def __init__(self, api_key: str | None = None) -> None:
-        self._api_key = api_key
+    def __init__(self) -> None:
         self._client: Any | None = None
         self._timeout_seconds: float | None = None
 
@@ -74,7 +73,7 @@ class OpenAIVisionClient:
         if self._client is None or self._timeout_seconds != timeout_seconds:
             from openai import OpenAI
 
-            self._client = OpenAI(api_key=self._api_key, timeout=timeout_seconds)
+            self._client = OpenAI(timeout=timeout_seconds)
             self._timeout_seconds = timeout_seconds
         return self._client
 
