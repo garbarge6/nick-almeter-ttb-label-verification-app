@@ -1,9 +1,11 @@
+import asyncio
 import json
 import logging
+import os
 import traceback
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, ValidationError
@@ -24,6 +26,8 @@ DEBUG_LOG_PATH = Path("logs/verify-debug.log")
 
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+BATCH_MAX_ITEMS = int(os.getenv("BATCH_MAX_ITEMS", "10"))
+BATCH_CONCURRENCY_LIMIT = int(os.getenv("BATCH_CONCURRENCY_LIMIT", "3"))
 
 
 class ErrorDetail(BaseModel):
@@ -39,6 +43,35 @@ class VerifyResponse(BaseModel):
     verification: VerificationResult
     extracted_label: ExtractedLabel
     latency_ms: int
+
+
+class BatchItemInput(BaseModel):
+    client_id: str
+    image_index: int
+    application_data: ApplicationData
+
+
+class BatchSummary(BaseModel):
+    total: int
+    passed: int
+    needs_review: int
+    failed_to_process: int
+    latency_ms: int
+
+
+class BatchItemResult(BaseModel):
+    client_id: str
+    filename: str | None = None
+    status: Literal["COMPLETED", "FAILED"]
+    verification: VerificationResult | None = None
+    extracted_label: ExtractedLabel | None = None
+    latency_ms: int
+    error: ErrorDetail | None = None
+
+
+class BatchVerifyResponse(BaseModel):
+    summary: BatchSummary
+    results: list[BatchItemResult]
 
 
 def get_vision_service() -> VisionService:
@@ -72,6 +105,31 @@ def parse_application_data(raw_application_data: str) -> ApplicationData:
         ) from exc
 
 
+def parse_batch_items(raw_items: str) -> list[BatchItemInput]:
+    try:
+        payload = json.loads(raw_items)
+    except json.JSONDecodeError as exc:
+        raise error_response(400, "invalid_batch", "Batch items must be valid JSON.") from exc
+
+    if not isinstance(payload, list):
+        raise error_response(400, "invalid_batch", "Batch items must be a list.")
+
+    if not payload:
+        raise error_response(400, "invalid_batch", "Please add at least one label to check.")
+
+    if len(payload) > BATCH_MAX_ITEMS:
+        raise error_response(413, "batch_too_large", f"Please check no more than {BATCH_MAX_ITEMS} labels at once.")
+
+    items: list[BatchItemInput] = []
+    for item in payload:
+        try:
+            items.append(BatchItemInput.model_validate(item))
+        except ValidationError as exc:
+            raise error_response(422, "invalid_batch", "Each batch item needs an image and all application fields.") from exc
+
+    return items
+
+
 async def read_valid_image(image: UploadFile) -> bytes:
     if image.content_type not in ALLOWED_IMAGE_TYPES:
         raise error_response(
@@ -96,6 +154,26 @@ async def read_valid_image(image: UploadFile) -> bytes:
         )
 
     return image_bytes
+
+
+async def read_batch_images(images: list[UploadFile]) -> list[tuple[UploadFile, bytes]]:
+    if not images:
+        raise error_response(400, "invalid_batch", "Please add at least one label image.")
+
+    stored: list[tuple[UploadFile, bytes]] = []
+    for image in images:
+        stored.append((image, await image.read()))
+    return stored
+
+
+def validate_batch_image(image: UploadFile, image_bytes: bytes) -> ErrorDetail | None:
+    if image.content_type not in ALLOWED_IMAGE_TYPES:
+        return ErrorDetail(code="invalid_file_type", message="Please upload a PNG, JPG, or WebP image.")
+    if not image_bytes:
+        return ErrorDetail(code="invalid_image", message="Please upload a non-empty image file.")
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        return ErrorDetail(code="image_too_large", message="Please upload an image smaller than 8 MB.")
+    return None
 
 
 def log_verify_finished(
@@ -139,6 +217,7 @@ def log_exception_details(error_code: str, latency_ms: int, exc: Exception) -> N
     with DEBUG_LOG_PATH.open("a", encoding="utf-8") as log_file:
         log_file.write(debug_text)
         log_file.write("\n")
+
 
 @router.post(
     "/verify",
@@ -210,3 +289,158 @@ async def verify(
         log_verify_finished(latency_ms=latency_ms, error_code="internal_error")
         log_exception_details("internal_error", latency_ms, exc)
         raise error_response(500, "internal_error", "Something went wrong. Please try again.") from exc
+
+
+async def process_batch_item(
+    item: BatchItemInput,
+    image_files: list[tuple[UploadFile, bytes]],
+    vision_service: VisionService,
+    semaphore: asyncio.Semaphore,
+) -> BatchItemResult:
+    start = time.perf_counter()
+
+    def elapsed_ms() -> int:
+        return int((time.perf_counter() - start) * 1000)
+
+    filename: str | None = None
+    try:
+        if item.image_index < 0 or item.image_index >= len(image_files):
+            return BatchItemResult(
+                client_id=item.client_id,
+                filename=None,
+                status="FAILED",
+                latency_ms=elapsed_ms(),
+                error=ErrorDetail(code="missing_image", message="A label image is missing."),
+            )
+
+        image, image_bytes = image_files[item.image_index]
+        filename = image.filename
+        image_error = validate_batch_image(image, image_bytes)
+        if image_error:
+            return BatchItemResult(
+                client_id=item.client_id,
+                filename=filename,
+                status="FAILED",
+                latency_ms=elapsed_ms(),
+                error=image_error,
+            )
+
+        async with semaphore:
+            extracted = await asyncio.to_thread(
+                vision_service.extract_label,
+                image_bytes,
+                filename,
+            )
+        verification = verify_label(item.application_data, extracted)
+        return BatchItemResult(
+            client_id=item.client_id,
+            filename=filename,
+            status="COMPLETED",
+            verification=verification,
+            extracted_label=extracted,
+            latency_ms=elapsed_ms(),
+        )
+    except VisionServiceTimeout as exc:
+        log_exception_details("vision_timeout", elapsed_ms(), exc)
+        return BatchItemResult(
+            client_id=item.client_id,
+            filename=filename,
+            status="FAILED",
+            latency_ms=elapsed_ms(),
+            error=ErrorDetail(code="vision_timeout", message="We could not read this image quickly enough. Please try another photo."),
+        )
+    except VisionImageError as exc:
+        log_exception_details("invalid_image", elapsed_ms(), exc)
+        return BatchItemResult(
+            client_id=item.client_id,
+            filename=filename,
+            status="FAILED",
+            latency_ms=elapsed_ms(),
+            error=ErrorDetail(code="invalid_image", message="We could not read this image. Please try another photo."),
+        )
+    except VisionServiceValidationError as exc:
+        log_exception_details("vision_invalid_response", elapsed_ms(), exc)
+        return BatchItemResult(
+            client_id=item.client_id,
+            filename=filename,
+            status="FAILED",
+            latency_ms=elapsed_ms(),
+            error=ErrorDetail(code="vision_invalid_response", message="We could not understand the label extraction result. Please try another photo."),
+        )
+    except VisionServiceError as exc:
+        log_exception_details("vision_service_error", elapsed_ms(), exc)
+        return BatchItemResult(
+            client_id=item.client_id,
+            filename=filename,
+            status="FAILED",
+            latency_ms=elapsed_ms(),
+            error=ErrorDetail(code="vision_service_error", message="The label reading service is unavailable. Please try again."),
+        )
+    except Exception as exc:
+        log_exception_details("internal_error", elapsed_ms(), exc)
+        return BatchItemResult(
+            client_id=item.client_id,
+            filename=filename,
+            status="FAILED",
+            latency_ms=elapsed_ms(),
+            error=ErrorDetail(code="internal_error", message="Something went wrong. Please try again."),
+        )
+
+
+@router.post(
+    "/verify/batch",
+    response_model=BatchVerifyResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        413: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+    },
+)
+async def verify_batch(
+    items: str = Form(...),
+    images: list[UploadFile] = File(...),
+    vision_service: VisionService = Depends(get_vision_service),
+) -> BatchVerifyResponse:
+    start = time.perf_counter()
+    batch_items = parse_batch_items(items)
+    image_files = await read_batch_images(images)
+    semaphore = asyncio.Semaphore(BATCH_CONCURRENCY_LIMIT)
+    results = await asyncio.gather(
+        *[process_batch_item(item, image_files, vision_service, semaphore) for item in batch_items]
+    )
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    passed = sum(
+        1
+        for result in results
+        if result.status == "COMPLETED"
+        and result.verification is not None
+        and result.verification.verdict == "PASS"
+    )
+    needs_review = sum(
+        1
+        for result in results
+        if result.status == "COMPLETED"
+        and result.verification is not None
+        and result.verification.verdict == "NEEDS_REVIEW"
+    )
+    failed_to_process = sum(1 for result in results if result.status == "FAILED")
+    logger.info(
+        "verify_batch_completed",
+        extra={
+            "latency_ms": latency_ms,
+            "total": len(results),
+            "passed": passed,
+            "needs_review": needs_review,
+            "failed_to_process": failed_to_process,
+        },
+    )
+    return BatchVerifyResponse(
+        summary=BatchSummary(
+            total=len(results),
+            passed=passed,
+            needs_review=needs_review,
+            failed_to_process=failed_to_process,
+            latency_ms=latency_ms,
+        ),
+        results=results,
+    )

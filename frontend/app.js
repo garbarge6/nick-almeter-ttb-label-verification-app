@@ -1,14 +1,28 @@
+const singleTab = document.getElementById("single-tab");
+const batchTab = document.getElementById("batch-tab");
+const singlePanel = document.getElementById("single-panel");
+const batchPanel = document.getElementById("batch-panel");
 const form = document.getElementById("verify-form");
 const imageInput = document.getElementById("label-image");
 const selectedFile = document.getElementById("selected-file");
 const formMessage = document.getElementById("form-message");
 const submitButton = document.getElementById("submit-button");
+const batchItemsContainer = document.getElementById("batch-items");
+const batchMessage = document.getElementById("batch-message");
+const addBatchItemButton = document.getElementById("add-batch-item");
+const batchSubmitButton = document.getElementById("batch-submit-button");
 const loadingState = document.getElementById("loading-state");
+const loadingTitle = document.getElementById("loading-title");
+const loadingText = document.getElementById("loading-text");
 const resultsSection = document.getElementById("results-section");
 const verdictBanner = document.getElementById("verdict-banner");
 const verdictText = document.getElementById("verdict-text");
 const latencyText = document.getElementById("latency-text");
 const fieldResults = document.getElementById("field-results");
+const batchResultsSection = document.getElementById("batch-results-section");
+const batchSummaryCounts = document.getElementById("batch-summary-counts");
+const batchLatencyText = document.getElementById("batch-latency-text");
+const batchResults = document.getElementById("batch-results");
 
 const fieldLabels = {
   brand_name: "Brand Name",
@@ -40,28 +54,37 @@ const requiredFields = [
   "government_warning",
 ];
 
+const MAX_BATCH_ITEMS = 10;
+let batchItemCounter = 0;
+let progressTimer = null;
+
+singleTab.addEventListener("click", () => setMode("single"));
+batchTab.addEventListener("click", () => setMode("batch"));
+addBatchItemButton.addEventListener("click", () => addBatchItem());
+batchSubmitButton.addEventListener("click", submitBatch);
+
 imageInput.addEventListener("change", () => {
   selectedFile.textContent = imageInput.files.length ? imageInput.files[0].name : "No image selected";
-  hideMessage();
+  hideMessage(formMessage);
 });
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  hideMessage();
+  hideMessage(formMessage);
   clearResults();
 
-  const validationMessage = validateForm();
+  const validationMessage = validateSingleForm();
   if (validationMessage) {
-    showMessage(validationMessage);
+    showMessage(formMessage, validationMessage);
     return;
   }
 
-  setLoading(true);
+  setLoading(true, "Checking the label...", "This may take a few seconds.");
 
   try {
     const response = await fetch("/verify", {
       method: "POST",
-      body: buildFormData(),
+      body: buildSingleFormData(),
     });
     const data = await response.json().catch(() => ({}));
 
@@ -69,15 +92,26 @@ form.addEventListener("submit", async (event) => {
       throw new Error(readableError(data));
     }
 
-    renderResults(data);
+    renderSingleResults(data);
   } catch (error) {
-    showMessage(error.message || "Something went wrong. Please try again.");
+    showMessage(formMessage, error.message || "Something went wrong. Please try again.");
   } finally {
     setLoading(false);
   }
 });
 
-function validateForm() {
+function setMode(mode) {
+  const isSingle = mode === "single";
+  singleTab.classList.toggle("is-active", isSingle);
+  batchTab.classList.toggle("is-active", !isSingle);
+  singlePanel.hidden = !isSingle;
+  batchPanel.hidden = isSingle;
+  clearResults();
+  hideMessage(formMessage);
+  hideMessage(batchMessage);
+}
+
+function validateSingleForm() {
   if (!imageInput.files.length) {
     return "Please choose a label image.";
   }
@@ -92,19 +126,158 @@ function validateForm() {
   return "";
 }
 
-function buildFormData() {
-  const applicationData = {};
-  for (const field of requiredFields) {
-    applicationData[field] = form.elements[field].value.trim();
-  }
-
+function buildSingleFormData() {
+  const applicationData = readApplicationData(form);
   const formData = new FormData();
   formData.append("image", imageInput.files[0]);
   formData.append("application_data", JSON.stringify(applicationData));
   return formData;
 }
 
-function renderResults(data) {
+function readApplicationData(scope) {
+  const applicationData = {};
+  for (const field of requiredFields) {
+    applicationData[field] = scope.querySelector(`[name="${field}"]`).value.trim();
+  }
+  return applicationData;
+}
+
+function addBatchItem() {
+  hideMessage(batchMessage);
+  if (batchItemsContainer.children.length >= MAX_BATCH_ITEMS) {
+    showMessage(batchMessage, "Please check no more than 10 labels at once.");
+    return;
+  }
+
+  batchItemCounter += 1;
+  const item = document.createElement("article");
+  item.className = "batch-item";
+  item.dataset.clientId = `label-${batchItemCounter}`;
+  item.innerHTML = `
+    <div class="batch-item-header">
+      <h3>Label ${batchItemsContainer.children.length + 1}</h3>
+      <button class="remove-button" type="button">Remove</button>
+    </div>
+    <div class="field image-field">
+      <label>Label Image</label>
+      <input name="image" type="file" accept="image/png,image/jpeg,image/webp">
+      <div class="selected-file" aria-live="polite">No image selected</div>
+    </div>
+    <div class="field-grid">
+      ${batchTextField("brand_name", "Brand Name")}
+      ${batchTextField("product_class", "Product Class")}
+      ${batchTextField("producer_name", "Producer Name")}
+      ${batchTextField("country_of_origin", "Country of Origin")}
+      ${batchTextField("abv", "Alcohol %")}
+      ${batchTextField("net_contents", "Bottle Size")}
+    </div>
+    <div class="field">
+      <label>Government Warning</label>
+      <textarea name="government_warning" rows="5"></textarea>
+    </div>
+  `;
+
+  const fileInput = item.querySelector('input[name="image"]');
+  const fileName = item.querySelector(".selected-file");
+  fileInput.addEventListener("change", () => {
+    fileName.textContent = fileInput.files.length ? fileInput.files[0].name : "No image selected";
+  });
+  item.querySelector(".remove-button").addEventListener("click", () => {
+    item.remove();
+    renumberBatchItems();
+  });
+  batchItemsContainer.appendChild(item);
+}
+
+function batchTextField(name, label) {
+  return `
+    <div class="field">
+      <label>${label}</label>
+      <input name="${name}" type="text" autocomplete="off">
+    </div>
+  `;
+}
+
+function renumberBatchItems() {
+  [...batchItemsContainer.children].forEach((item, index) => {
+    item.querySelector("h3").textContent = `Label ${index + 1}`;
+  });
+}
+
+async function submitBatch() {
+  hideMessage(batchMessage);
+  clearResults();
+
+  const buildResult = buildBatchFormData();
+  if (buildResult.error) {
+    showMessage(batchMessage, buildResult.error);
+    return;
+  }
+
+  setLoading(true, "Checking labels...", `Checking ${buildResult.count} labels.`);
+  progressTimer = window.setTimeout(() => {
+    loadingText.textContent = `Still checking ${buildResult.count} labels. Results will appear here when the batch is done.`;
+  }, 700);
+
+  try {
+    const response = await fetch("/verify/batch", {
+      method: "POST",
+      body: buildResult.formData,
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(readableError(data));
+    }
+
+    renderBatchResults(data);
+  } catch (error) {
+    showMessage(batchMessage, error.message || "Something went wrong. Please try again.");
+  } finally {
+    if (progressTimer) {
+      window.clearTimeout(progressTimer);
+      progressTimer = null;
+    }
+    setLoading(false);
+  }
+}
+
+function buildBatchFormData() {
+  const rows = [...batchItemsContainer.children];
+  if (!rows.length) {
+    return { error: "Please add at least one label." };
+  }
+
+  const formData = new FormData();
+  const items = [];
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const image = row.querySelector('input[name="image"]');
+    if (!image.files.length) {
+      return { error: `Please choose an image for Label ${index + 1}.` };
+    }
+
+    for (const field of requiredFields) {
+      const input = row.querySelector(`[name="${field}"]`);
+      if (!input.value.trim()) {
+        return { error: `Please fill in all fields for Label ${index + 1}.` };
+      }
+    }
+
+    formData.append("images", image.files[0]);
+    items.push({
+      client_id: row.dataset.clientId,
+      image_index: index,
+      application_data: readApplicationData(row),
+    });
+  }
+
+  formData.append("items", JSON.stringify(items));
+  return { formData, count: rows.length };
+}
+
+function renderSingleResults(data) {
   const verification = data.verification;
   const verdict = verification.verdict;
   const approved = verdict === "PASS";
@@ -121,8 +294,87 @@ function renderResults(data) {
   });
 
   resultsSection.hidden = false;
-  resultsSection.focus({ preventScroll: true });
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderBatchResults(data) {
+  const summary = data.summary;
+  batchSummaryCounts.innerHTML = "";
+  batchSummaryCounts.append(
+    summaryBox("Total", summary.total),
+    summaryBox("Approved", summary.passed),
+    summaryBox("Needs Review", summary.needs_review),
+    summaryBox("Could Not Process", summary.failed_to_process),
+  );
+  batchLatencyText.textContent = Number.isInteger(summary.latency_ms)
+    ? `Time: ${(summary.latency_ms / 1000).toFixed(1)} seconds`
+    : "";
+
+  batchResults.innerHTML = "";
+  data.results.forEach((result, index) => {
+    batchResults.appendChild(renderBatchResult(result, index));
+  });
+  batchResultsSection.hidden = false;
+  batchResultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function summaryBox(label, value) {
+  const box = document.createElement("div");
+  box.className = "summary-box";
+  box.innerHTML = `<div class="summary-value">${value}</div><div class="summary-label">${label}</div>`;
+  return box;
+}
+
+function renderBatchResult(result, index) {
+  const item = document.createElement("article");
+  item.className = "batch-result";
+
+  const title = result.filename || `Label ${index + 1}`;
+  const statusText = result.status === "FAILED"
+    ? "COULD NOT PROCESS"
+    : result.verification.verdict === "PASS"
+      ? "APPROVED"
+      : "NEEDS REVIEW";
+  const statusClass = result.status === "FAILED"
+    ? "batch-status-failed"
+    : result.verification.verdict === "PASS"
+      ? "batch-status-pass"
+      : "batch-status-review";
+
+  const detailsId = `batch-details-${index}`;
+  item.innerHTML = `
+    <div class="batch-result-header">
+      <div>
+        <h3>${escapeHtml(title)}</h3>
+        <div class="batch-client-id">${escapeHtml(result.client_id)}</div>
+      </div>
+      <div class="batch-status ${statusClass}">${statusText}</div>
+    </div>
+    <button class="details-button" type="button" aria-expanded="false" aria-controls="${detailsId}">Show Details</button>
+    <div id="${detailsId}" class="batch-detail-panel" hidden></div>
+  `;
+
+  const panel = item.querySelector(".batch-detail-panel");
+  if (result.status === "FAILED") {
+    const error = document.createElement("div");
+    error.className = "message inline-message";
+    error.textContent = result.error?.message || "Something went wrong. Please try again.";
+    panel.appendChild(error);
+  } else {
+    result.verification.fields.forEach((field) => {
+      panel.appendChild(renderFieldResult(field));
+    });
+  }
+
+  const button = item.querySelector(".details-button");
+  button.addEventListener("click", () => {
+    const isOpen = !panel.hidden;
+    panel.hidden = isOpen;
+    button.setAttribute("aria-expanded", String(!isOpen));
+    button.textContent = isOpen ? "Show Details" : "Hide Details";
+  });
+
+  return item;
 }
 
 function renderFieldResult(field) {
@@ -176,24 +428,42 @@ function readableError(data) {
   return data?.detail?.error?.message || data?.error?.message || "Something went wrong. Please try again.";
 }
 
-function showMessage(message) {
-  formMessage.textContent = message;
-  formMessage.hidden = false;
-  formMessage.scrollIntoView({ behavior: "smooth", block: "center" });
+function showMessage(target, message) {
+  target.textContent = message;
+  target.hidden = false;
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function hideMessage() {
-  formMessage.textContent = "";
-  formMessage.hidden = true;
+function hideMessage(target) {
+  target.textContent = "";
+  target.hidden = true;
 }
 
 function clearResults() {
   resultsSection.hidden = true;
+  batchResultsSection.hidden = true;
   fieldResults.innerHTML = "";
+  batchResults.innerHTML = "";
 }
 
-function setLoading(isLoading) {
+function setLoading(isLoading, title = "Checking...", text = "This may take a few seconds.") {
   submitButton.disabled = isLoading;
+  batchSubmitButton.disabled = isLoading;
+  addBatchItemButton.disabled = isLoading;
   submitButton.textContent = isLoading ? "CHECKING..." : "CHECK LABEL";
+  batchSubmitButton.textContent = isLoading ? "CHECKING..." : "CHECK ALL LABELS";
+  loadingTitle.textContent = title;
+  loadingText.textContent = text;
   loadingState.hidden = !isLoading;
 }
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"]/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+  })[char]);
+}
+
+addBatchItem();

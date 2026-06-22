@@ -39,6 +39,22 @@ For an offline smoke check that does not call the API:
 ```powershell
 uv run python scripts/run_vision_sample.py images\jim.png --fake
 ```
+## Batch verification
+
+The frontend includes Single Label and Batch modes. Batch mode sends multiple labels to:
+
+```text
+POST /verify/batch
+```
+
+Batch settings:
+
+```text
+BATCH_MAX_ITEMS=10
+BATCH_CONCURRENCY_LIMIT=3
+```
+
+Each label gets its own result. One bad label does not fail the whole batch.
 ## Render deploy
 
 Create a Render Web Service from this repo.

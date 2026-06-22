@@ -13,7 +13,12 @@
         <h1>TTB Label Verification</h1>
       </header>
 
-      <section class="form-section" aria-labelledby="form-title">
+      <nav class="mode-tabs" aria-label="Choose verification mode">
+        <button id="single-tab" class="mode-tab is-active" type="button">Single Label</button>
+        <button id="batch-tab" class="mode-tab" type="button">Batch</button>
+      </nav>
+
+      <section id="single-panel" class="form-section" aria-labelledby="form-title">
         <h2 id="form-title">Check One Label</h2>
 
         <form id="verify-form" novalidate>
@@ -66,11 +71,21 @@
         </form>
       </section>
 
+      <section id="batch-panel" class="form-section" aria-labelledby="batch-title" hidden>
+        <h2 id="batch-title">Check a Batch</h2>
+        <div id="batch-message" class="message" role="alert" hidden></div>
+        <div id="batch-items" class="batch-items"></div>
+        <div class="batch-actions">
+          <button id="add-batch-item" class="secondary-button" type="button">ADD LABEL</button>
+          <button id="batch-submit-button" class="submit-button" type="button">CHECK ALL LABELS</button>
+        </div>
+      </section>
+
       <section id="loading-state" class="loading-state" aria-live="polite" hidden>
         <div class="loader" aria-hidden="true"></div>
         <div>
-          <h2>Checking the label...</h2>
-          <p>This may take a few seconds.</p>
+          <h2 id="loading-title">Checking the label...</h2>
+          <p id="loading-text">This may take a few seconds.</p>
         </div>
       </section>
 
@@ -82,6 +97,15 @@
         </div>
 
         <div id="field-results" class="field-results"></div>
+      </section>
+
+      <section id="batch-results-section" class="results-section" aria-labelledby="batch-results-title" hidden>
+        <div class="verdict-banner batch-summary-banner">
+          <h2 id="batch-results-title">Batch Summary</h2>
+          <div id="batch-summary-counts" class="summary-grid"></div>
+          <div id="batch-latency-text" class="latency-text"></div>
+        </div>
+        <div id="batch-results" class="batch-results"></div>
       </section>
     </main>
   </body>
