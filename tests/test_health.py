@@ -15,3 +15,4 @@ def test_health_returns_ok() -> None:
         "version": "0.0.1",
         "environment": "production",
     }
+

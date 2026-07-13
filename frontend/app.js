@@ -29,8 +29,8 @@ const batchResetButton = document.getElementById("batch-reset-button");
 
 const fieldLabels = {
   brand_name: "Brand Name",
-  product_class: "Product Class",
-  producer_name: "Producer Name",
+  class_type: "Product Class",
+  producer: "Producer Name",
   country_of_origin: "Country of Origin",
   abv: "Alcohol %",
   net_contents: "Bottle Size",
@@ -39,18 +39,18 @@ const fieldLabels = {
 
 const failReasons = {
   brand_name: "The label says something different.",
-  product_class: "The label says something different.",
-  producer_name: "The label says something different.",
+  class_type: "The label says something different.",
+  producer: "The label says something different.",
   country_of_origin: "The countries do not match.",
   abv: "The alcohol numbers do not match closely enough.",
   net_contents: "The bottle sizes do not match.",
-  government_warning: "The warning must match exactly, including capital letters and punctuation.",
+  government_warning: "The warning must match after whitespace is collapsed, including capital letters and punctuation.",
 };
 
 const requiredFields = [
   "brand_name",
-  "product_class",
-  "producer_name",
+  "class_type",
+  "producer",
   "country_of_origin",
   "abv",
   "net_contents",
@@ -196,8 +196,8 @@ function addBatchItem() {
     </div>
     <div class="field-grid">
       ${batchTextField("brand_name", "Brand Name", rowId)}
-      ${batchTextField("product_class", "Product Class", rowId)}
-      ${batchTextField("producer_name", "Producer Name", rowId)}
+      ${batchTextField("class_type", "Product Class", rowId)}
+      ${batchTextField("producer", "Producer Name", rowId)}
       ${batchTextField("country_of_origin", "Country of Origin", rowId)}
       ${batchTextField("abv", "Alcohol %", rowId, "number", "0.1")}
       ${batchTextField("net_contents", "Bottle Size", rowId, "number", "1")}
@@ -335,9 +335,7 @@ function renderBatchResults(data) {
     summaryBox("Approved", summary.passed),
     summaryBox("Needs Review", summary.needs_review),
   );
-  batchLatencyText.textContent = Number.isInteger(summary.latency_ms)
-    ? `Time: ${(summary.latency_ms / 1000).toFixed(1)} seconds`
-    : "";
+  batchLatencyText.textContent = "";
 
   batchResults.innerHTML = "";
   data.results.forEach((result, index) => {
@@ -529,3 +527,5 @@ function escapeHtml(value) {
 }
 
 addBatchItem();
+
+

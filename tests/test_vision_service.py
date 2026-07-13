@@ -49,8 +49,8 @@ class FailureClient:
 def test_service_returns_extracted_label_from_structured_response() -> None:
     response = {
         "brand_name": "Acme Wine",
-        "product_class": "Cabernet Sauvignon",
-        "producer_name": "Acme Winery",
+        "class_type": "Cabernet Sauvignon",
+        "producer": "Acme Winery",
         "country_of_origin": "USA",
         "abv": "45% Alc./Vol. (90 Proof)",
         "net_contents": "750 mL",
@@ -87,7 +87,7 @@ def test_partial_blurry_response_returns_partial_data() -> None:
     extracted = service.extract_label(make_label_image_bytes())
 
     assert extracted.brand_name == "Acme Wine"
-    assert extracted.product_class is None
+    assert extracted.class_type is None
     assert extracted.government_warning == GOVERNMENT_WARNING
 
 
@@ -147,3 +147,4 @@ def test_invalid_image_bytes_raise_image_error() -> None:
 def test_prompt_tells_model_to_copy_warning_verbatim() -> None:
     assert "copy only the government warning exactly as printed" in VISION_SYSTEM_PROMPT
     assert "Do not substitute the standard warning from memory" in VISION_SYSTEM_PROMPT
+

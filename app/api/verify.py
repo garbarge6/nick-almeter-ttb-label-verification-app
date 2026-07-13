@@ -126,30 +126,19 @@ def parse_application_data(raw_application_data: str) -> ApplicationData:
         ) from exc
 
 
-MATCH_TYPES = {
-    "brand_name": "fuzzy",
-    "product_class": "fuzzy",
-    "producer_name": "fuzzy",
-    "country_of_origin": "normalized",
-    "abv": "numeric",
-    "net_contents": "numeric",
-    "government_warning": "exact",
-}
-
-
 def field_response(field: FieldResult) -> FieldResponse:
     return FieldResponse(
         field=field.field,
-        match_type=MATCH_TYPES.get(field.field, "unknown"),
-        expected=field.application_value,
-        found=field.extracted_value,
+        match_type=field.match_type,
+        expected=field.expected,
+        found=field.found,
         status=field.status,
     )
 
 
 def verification_response(verification: VerificationResult, latency_ms: int) -> VerificationResponse:
     return VerificationResponse(
-        overall_verdict=verification.verdict,
+        overall_verdict=verification.overall_verdict,
         fields=[field_response(field) for field in verification.fields],
         latency_ms=latency_ms,
     )
@@ -314,7 +303,7 @@ async def verify(
         failures = [field.field for field in verification.fields if field.status == "FAIL"]
         log_verify_finished(
             latency_ms=latency_ms,
-            verdict=verification.verdict,
+            verdict=verification.overall_verdict,
             failures=failures,
         )
         return VerifyResponse(
@@ -502,7 +491,6 @@ async def verify_batch(
         and result.verification is not None
         and result.verification.overall_verdict == "NEEDS_REVIEW"
     )
-    failed_to_process = sum(1 for result in results if result.status == "FAILED")
     logger.info(
         "verify_batch_completed",
         extra={
@@ -510,7 +498,6 @@ async def verify_batch(
             "total": len(results),
             "passed": passed,
             "needs_review": needs_review,
-            "failed_to_process": failed_to_process,
         },
     )
     return BatchVerifyResponse(
@@ -521,3 +508,4 @@ async def verify_batch(
         ),
         results=results,
     )
+

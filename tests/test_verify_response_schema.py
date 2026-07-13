@@ -15,8 +15,8 @@ class FakeVisionService:
         del image_bytes, filename
         return ExtractedLabel(
             brand_name="acme wine",
-            product_class="cabernet sauvignon",
-            producer_name="Acme Winery",
+            class_type="cabernet sauvignon",
+            producer="Acme Winery",
             country_of_origin="United States",
             abv="45% Alc./Vol. (90 Proof)",
             net_contents="750ml",
@@ -36,8 +36,8 @@ def make_image_bytes() -> bytes:
 def application_payload() -> dict[str, object]:
     return {
         "brand_name": "ACME WINE",
-        "product_class": "Cabernet Sauvignon",
-        "producer_name": "Acme Winery LLC",
+        "class_type": "Cabernet Sauvignon",
+        "producer": "Acme Winery LLC",
         "country_of_origin": "USA",
         "abv": "45%",
         "net_contents": "750 mL",
@@ -77,3 +77,4 @@ def test_verify_response_schema_literals_are_pinned() -> None:
 
     assert "raw_text" in body["extracted_label"]
     assert "extraction_confidence" in body["extracted_label"]
+

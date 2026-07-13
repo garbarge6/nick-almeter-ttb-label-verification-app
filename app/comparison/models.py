@@ -4,13 +4,14 @@ from pydantic import BaseModel, field_validator
 
 
 FieldStatus = Literal["PASS", "FAIL"]
+MatchType = Literal["fuzzy", "synonym", "numeric", "unit", "exact"]
 Verdict = Literal["APPROVED", "NEEDS_REVIEW"]
 
 
 class ApplicationData(BaseModel):
     brand_name: str
-    product_class: str
-    producer_name: str
+    class_type: str
+    producer: str
     country_of_origin: str
     abv: str | float
     net_contents: str
@@ -18,8 +19,8 @@ class ApplicationData(BaseModel):
 
     @field_validator(
         "brand_name",
-        "product_class",
-        "producer_name",
+        "class_type",
+        "producer",
         "country_of_origin",
         "abv",
         "net_contents",
@@ -34,8 +35,8 @@ class ApplicationData(BaseModel):
 
 class ExtractedLabel(BaseModel):
     brand_name: str | None = None
-    product_class: str | None = None
-    producer_name: str | None = None
+    class_type: str | None = None
+    producer: str | None = None
     country_of_origin: str | None = None
     abv: str | float | None = None
     net_contents: str | None = None
@@ -44,18 +45,24 @@ class ExtractedLabel(BaseModel):
     extraction_confidence: float | None = None
 
 
+class FieldDetails(BaseModel):
+    normalized_expected: str | float | None = None
+    normalized_found: str | float | None = None
+    score: float | None = None
+    message: str | None = None
+
+
 class FieldResult(BaseModel):
     field: str
+    match_type: MatchType
+    expected: str | float
+    found: str | float | None
     status: FieldStatus
-    application_value: str | float
-    extracted_value: str | float | None
-    normalized_application_value: str | float | None = None
-    normalized_extracted_value: str | float | None = None
-    score: float | None = None
-    message: str
+    details: FieldDetails | None = None
 
 
 class VerificationResult(BaseModel):
-    verdict: Verdict
+    overall_verdict: Verdict
     fields: list[FieldResult]
-    latency_ms: int | None = None
+    latency_ms: int
+

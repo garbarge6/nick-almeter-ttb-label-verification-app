@@ -195,7 +195,7 @@ Single-label request:
 ```bash
 curl -X POST https://nick-almeter-ttb-label-verification-app.onrender.com/verify \
   -F "image=@samples/sample-label.png" \
-  -F 'application_data={"brand_name":"ACME WINE","product_class":"Cabernet Sauvignon","producer_name":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}'
+  -F 'application_data={"brand_name":"ACME WINE","class_type":"Cabernet Sauvignon","producer":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}'
 ```
 
 Single-label expected response shape:
@@ -217,8 +217,8 @@ Single-label expected response shape:
   },
   "extracted_label": {
     "brand_name": "acme wine",
-    "product_class": "cabernet sauvignon",
-    "producer_name": "Acme Winery",
+    "class_type": "cabernet sauvignon",
+    "producer": "Acme Winery",
     "country_of_origin": "United States",
     "abv": "45% Alc./Vol. (90 Proof)",
     "net_contents": "750ml",
@@ -236,7 +236,7 @@ Batch request with two labels:
 curl -X POST https://nick-almeter-ttb-label-verification-app.onrender.com/verify/batch \
   -F "images=@samples/sample-label.png" \
   -F "images=@samples/sample-label.png" \
-  -F 'items=[{"client_id":"label-1","image_index":0,"application_data":{"brand_name":"ACME WINE","product_class":"Cabernet Sauvignon","producer_name":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}},{"client_id":"label-2","image_index":1,"application_data":{"brand_name":"WRONG BRAND","product_class":"Cabernet Sauvignon","producer_name":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}}]'
+  -F 'items=[{"client_id":"label-1","image_index":0,"application_data":{"brand_name":"ACME WINE","class_type":"Cabernet Sauvignon","producer":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}},{"client_id":"label-2","image_index":1,"application_data":{"brand_name":"WRONG BRAND","class_type":"Cabernet Sauvignon","producer":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}}]'
 ```
 
 Batch expected response shape:
@@ -307,9 +307,9 @@ The contract error object is:
 
 | Field | Rule |
 | --- | --- |
-| Brand Name | Fuzzy normalized text comparison with threshold `85.0`. Common legal suffixes such as `LLC`, `Inc`, and `Company` are ignored; short subset traps like `ACME` vs `ACME RESERVE SPECIAL EDITION` fail. |
-| Product Class | Fuzzy normalized text comparison with threshold `85.0`. |
-| Producer Name | Fuzzy normalized text comparison with threshold `85.0`; common legal suffixes are ignored. |
+| Brand Name | Fuzzy normalized text comparison with threshold `90.0`. Common legal suffixes such as `LLC`, `Inc`, and `Company` are ignored; short subset traps like `ACME` vs `ACME RESERVE SPECIAL EDITION` fail. |
+| Product Class | Fuzzy normalized text comparison with threshold `90.0`. |
+| Producer Name | Fuzzy normalized text comparison with threshold `90.0`; common legal suffixes are ignored. |
 | Country of Origin | Text is normalized and checked against a small synonym map, e.g. `USA` and `United States` both normalize to `united states`. |
 | Alcohol % | Numeric percent comparison with tolerance `+/- 0.1`; proof text is converted to ABV, so `90 Proof` becomes `45.0`. |
 | Bottle Size | Unit-normalized milliliter comparison with tolerance `+/- 1 mL`; `0.75 L`, `75 cl`, and `750 ml` normalize to the same value. |
@@ -352,7 +352,7 @@ The project was built with an AI-native Plan / Review / Execute cadence using Co
 
 ## Tradeoffs
 
-- The fuzzy threshold is fixed at `85.0`: high enough to avoid many false approvals, but conservative labels may still require review.
+- The fuzzy threshold is fixed at `90.0`: high enough to avoid many false approvals, but conservative labels may still require review.
 - Batch size is capped at `10` uploaded images and `10` JSON items to limit memory, vision API cost, timeout risk, and free-tier resource spikes.
 - Batch concurrency defaults to `3` to improve throughput without launching every vision request at once.
 - The API keeps failed batch items in `results[]` instead of adding extra summary keys, so the summary remains the spec shape `{passed, needs_review, total}`.
@@ -442,7 +442,7 @@ Mismatch: 504, 13871 ms
 Imperfect image: 200, 7149 ms
 Wrong file type: 400, readable invalid_file_type error
 Empty submit: 422, readable invalid_request error
-Batch summary from live deployment: total 3, passed 0, needs_review 0, failed_to_process 3, latency 13585 ms
+Batch response shape from live deployment: summary contains total, passed, and needs_review; item-level results carry processing failures.
 ```
 
 Performance note: the latest 20-run live sample does not meet the strict under-5-second gate. The local implementation has the corrected response contract, but the public Render deployment needs to be redeployed and remeasured before final submission.
@@ -482,3 +482,4 @@ no staged secret patterns
 secret grep has no real secrets; code references to api_key are allowed
 README has no placeholders before final submission
 ```
+

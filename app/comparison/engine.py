@@ -1,6 +1,8 @@
 from collections.abc import Callable
+import re
+import time
 
-from app.comparison.models import ApplicationData, ExtractedLabel, FieldResult, VerificationResult
+from app.comparison.models import ApplicationData, ExtractedLabel, FieldDetails, FieldResult, VerificationResult
 from app.comparison.normalizers import (
     normalize_country,
     normalize_text,
@@ -10,7 +12,7 @@ from app.comparison.normalizers import (
 )
 
 
-FUZZY_THRESHOLD = 85.0
+FUZZY_THRESHOLD = 90.0
 ABV_TOLERANCE = 0.1
 NET_CONTENTS_ML_TOLERANCE = 1.0
 GOVERNMENT_WARNING = (
@@ -21,148 +23,173 @@ GOVERNMENT_WARNING = (
 )
 
 
-def _missing_result(field: str, application_value: str | float, extracted_value: object) -> FieldResult:
+def collapse_whitespace(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _missing_result(field: str, match_type: str, expected: str | float, found: object) -> FieldResult:
     return FieldResult(
         field=field,
+        match_type=match_type,
+        expected=expected,
+        found=found if isinstance(found, str | float) else None,
         status="FAIL",
-        application_value=application_value,
-        extracted_value=extracted_value if isinstance(extracted_value, str | float) else None,
-        message="Extracted value is missing.",
+        details=FieldDetails(message="Extracted value is missing."),
     )
 
 
-def _compare_fuzzy(field: str, application_value: str, extracted_value: str | None) -> FieldResult:
-    if extracted_value is None or extracted_value == "":
-        return _missing_result(field, application_value, extracted_value)
+def _compare_fuzzy(field: str, expected: str, found: str | None) -> FieldResult:
+    if found is None or found == "":
+        return _missing_result(field, "fuzzy", expected, found)
 
-    normalized_application = normalize_text(application_value)
-    normalized_extracted = normalize_text(extracted_value)
-    score = token_set_ratio(application_value, extracted_value)
+    normalized_expected = normalize_text(expected)
+    normalized_found = normalize_text(found)
+    score = token_set_ratio(expected, found)
     status = "PASS" if score >= FUZZY_THRESHOLD else "FAIL"
 
     return FieldResult(
         field=field,
+        match_type="fuzzy",
+        expected=expected,
+        found=found,
         status=status,
-        application_value=application_value,
-        extracted_value=extracted_value,
-        normalized_application_value=normalized_application,
-        normalized_extracted_value=normalized_extracted,
-        score=score,
-        message=f"Fuzzy score {score} with threshold {FUZZY_THRESHOLD}.",
+        details=FieldDetails(
+            normalized_expected=normalized_expected,
+            normalized_found=normalized_found,
+            score=score,
+            message=f"Fuzzy score {score} with threshold {FUZZY_THRESHOLD}.",
+        ),
     )
 
 
-def compare_brand_name(application_value: str, extracted_value: str | None) -> FieldResult:
-    return _compare_fuzzy("brand_name", application_value, extracted_value)
+def compare_brand_name(expected: str, found: str | None) -> FieldResult:
+    return _compare_fuzzy("brand_name", expected, found)
 
 
-def compare_product_class(application_value: str, extracted_value: str | None) -> FieldResult:
-    return _compare_fuzzy("product_class", application_value, extracted_value)
+def compare_class_type(expected: str, found: str | None) -> FieldResult:
+    return _compare_fuzzy("class_type", expected, found)
 
 
-def compare_producer_name(application_value: str, extracted_value: str | None) -> FieldResult:
-    return _compare_fuzzy("producer_name", application_value, extracted_value)
+
+def compare_producer(expected: str, found: str | None) -> FieldResult:
+    return _compare_fuzzy("producer", expected, found)
 
 
-def compare_country_of_origin(application_value: str, extracted_value: str | None) -> FieldResult:
-    if extracted_value is None or extracted_value == "":
-        return _missing_result("country_of_origin", application_value, extracted_value)
 
-    normalized_application = normalize_country(application_value)
-    normalized_extracted = normalize_country(extracted_value)
-    status = "PASS" if normalized_application == normalized_extracted else "FAIL"
+def compare_country_of_origin(expected: str, found: str | None) -> FieldResult:
+    if found is None or found == "":
+        return _missing_result("country_of_origin", "synonym", expected, found)
+
+    normalized_expected = normalize_country(expected)
+    normalized_found = normalize_country(found)
+    status = "PASS" if normalized_expected == normalized_found else "FAIL"
 
     return FieldResult(
         field="country_of_origin",
+        match_type="synonym",
+        expected=expected,
+        found=found,
         status=status,
-        application_value=application_value,
-        extracted_value=extracted_value,
-        normalized_application_value=normalized_application,
-        normalized_extracted_value=normalized_extracted,
-        message="Country values match after synonym normalization."
-        if status == "PASS"
-        else "Country values differ after synonym normalization.",
+        details=FieldDetails(
+            normalized_expected=normalized_expected,
+            normalized_found=normalized_found,
+            message="Country values match after synonym normalization."
+            if status == "PASS"
+            else "Country values differ after synonym normalization.",
+        ),
     )
 
 
-def compare_abv(application_value: str | float, extracted_value: str | float | None) -> FieldResult:
-    if extracted_value is None or extracted_value == "":
-        return _missing_result("abv", application_value, extracted_value)
+def compare_abv(expected: str | float, found: str | float | None) -> FieldResult:
+    if found is None or found == "":
+        return _missing_result("abv", "numeric", expected, found)
 
-    normalized_application = parse_abv_percent(application_value)
-    normalized_extracted = parse_abv_percent(extracted_value)
+    normalized_expected = parse_abv_percent(expected)
+    normalized_found = parse_abv_percent(found)
     status = (
         "PASS"
-        if normalized_application is not None
-        and normalized_extracted is not None
-        and abs(normalized_application - normalized_extracted) <= ABV_TOLERANCE
+        if normalized_expected is not None
+        and normalized_found is not None
+        and abs(normalized_expected - normalized_found) <= ABV_TOLERANCE
         else "FAIL"
     )
 
     return FieldResult(
         field="abv",
+        match_type="numeric",
+        expected=expected,
+        found=found,
         status=status,
-        application_value=application_value,
-        extracted_value=extracted_value,
-        normalized_application_value=normalized_application,
-        normalized_extracted_value=normalized_extracted,
-        message="ABV values match within tolerance."
-        if status == "PASS"
-        else "ABV values are missing, unparseable, or outside tolerance.",
+        details=FieldDetails(
+            normalized_expected=normalized_expected,
+            normalized_found=normalized_found,
+            message="ABV values match within tolerance."
+            if status == "PASS"
+            else "ABV values are missing, unparseable, or outside tolerance.",
+        ),
     )
 
 
-def compare_net_contents(application_value: str, extracted_value: str | None) -> FieldResult:
-    if extracted_value is None or extracted_value == "":
-        return _missing_result("net_contents", application_value, extracted_value)
+def compare_net_contents(expected: str, found: str | None) -> FieldResult:
+    if found is None or found == "":
+        return _missing_result("net_contents", "unit", expected, found)
 
-    normalized_application = parse_net_contents_ml(application_value)
-    normalized_extracted = parse_net_contents_ml(extracted_value)
+    normalized_expected = parse_net_contents_ml(expected)
+    normalized_found = parse_net_contents_ml(found)
     status = (
         "PASS"
-        if normalized_application is not None
-        and normalized_extracted is not None
-        and abs(normalized_application - normalized_extracted) <= NET_CONTENTS_ML_TOLERANCE
+        if normalized_expected is not None
+        and normalized_found is not None
+        and abs(normalized_expected - normalized_found) <= NET_CONTENTS_ML_TOLERANCE
         else "FAIL"
     )
 
     return FieldResult(
         field="net_contents",
+        match_type="unit",
+        expected=expected,
+        found=found,
         status=status,
-        application_value=application_value,
-        extracted_value=extracted_value,
-        normalized_application_value=normalized_application,
-        normalized_extracted_value=normalized_extracted,
-        message="Net contents match after ml normalization."
-        if status == "PASS"
-        else "Net contents are missing, unparseable, or outside tolerance.",
+        details=FieldDetails(
+            normalized_expected=normalized_expected,
+            normalized_found=normalized_found,
+            message="Net contents match after ml normalization."
+            if status == "PASS"
+            else "Net contents are missing, unparseable, or outside tolerance.",
+        ),
     )
 
 
-def compare_government_warning(application_value: str, extracted_value: str | None) -> FieldResult:
-    if extracted_value is None:
-        return _missing_result("government_warning", application_value, extracted_value)
+def compare_government_warning(expected: str, found: str | None) -> FieldResult:
+    if found is None:
+        return _missing_result("government_warning", "exact", expected, found)
 
-    status = "PASS" if application_value == extracted_value else "FAIL"
+    normalized_expected = collapse_whitespace(expected)
+    normalized_found = collapse_whitespace(found)
+    status = "PASS" if normalized_expected == normalized_found else "FAIL"
 
     return FieldResult(
         field="government_warning",
+        match_type="exact",
+        expected=expected,
+        found=found,
         status=status,
-        application_value=application_value,
-        extracted_value=extracted_value,
-        normalized_application_value=None,
-        normalized_extracted_value=None,
-        message="Government warning is an exact case-sensitive match."
-        if status == "PASS"
-        else "Government warning must match exactly, including case and punctuation.",
+        details=FieldDetails(
+            normalized_expected=normalized_expected,
+            normalized_found=normalized_found,
+            message="Government warning matches after whitespace collapse."
+            if status == "PASS"
+            else "Government warning must match exactly after whitespace collapse, including case and punctuation.",
+        ),
     )
 
 
 def verify_label(application: ApplicationData, extracted: ExtractedLabel) -> VerificationResult:
+    start = time.perf_counter()
     comparisons: list[Callable[[], FieldResult]] = [
         lambda: compare_brand_name(application.brand_name, extracted.brand_name),
-        lambda: compare_product_class(application.product_class, extracted.product_class),
-        lambda: compare_producer_name(application.producer_name, extracted.producer_name),
+        lambda: compare_class_type(application.class_type, extracted.class_type),
+        lambda: compare_producer(application.producer, extracted.producer),
         lambda: compare_country_of_origin(application.country_of_origin, extracted.country_of_origin),
         lambda: compare_abv(application.abv, extracted.abv),
         lambda: compare_net_contents(application.net_contents, extracted.net_contents),
@@ -171,6 +198,8 @@ def verify_label(application: ApplicationData, extracted: ExtractedLabel) -> Ver
         ),
     ]
     fields = [compare() for compare in comparisons]
-    verdict = "NEEDS_REVIEW" if any(field.status == "FAIL" for field in fields) else "APPROVED"
+    overall_verdict = "NEEDS_REVIEW" if any(field.status == "FAIL" for field in fields) else "APPROVED"
+    latency_ms = int((time.perf_counter() - start) * 1000)
 
-    return VerificationResult(verdict=verdict, fields=fields)
+    return VerificationResult(overall_verdict=overall_verdict, fields=fields, latency_ms=latency_ms)
+

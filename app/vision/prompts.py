@@ -4,8 +4,8 @@ Return structured data only. Do not guess; use null when text is not visible or 
 
 Fields:
 - brand_name
-- product_class
-- producer_name
+- class_type
+- producer
 - country_of_origin
 - abv
 - net_contents
@@ -24,3 +24,4 @@ For all other fields, return the clearest visible label text. If blur, glare, an
 """
 
 VISION_USER_PROMPT = "Extract the seven label fields from this image."
+

@@ -18,8 +18,8 @@ from app.comparison.engine import GOVERNMENT_WARNING
 def application_data(**overrides: object) -> dict[str, object]:
     data: dict[str, object] = {
         "brand_name": "ACME WINE",
-        "product_class": "Cabernet Sauvignon",
-        "producer_name": "Acme Winery LLC",
+        "class_type": "Cabernet Sauvignon",
+        "producer": "Acme Winery LLC",
         "country_of_origin": "USA",
         "abv": "45%",
         "net_contents": "750 mL",
@@ -59,7 +59,7 @@ def percentile(values: list[float], percentile_value: float) -> float:
 def verification_verdict(payload: dict[str, object]) -> object:
     verification = payload.get("verification", {})
     if isinstance(verification, dict):
-        return verification.get("overall_verdict") or verification.get("verdict")
+        return verification.get("overall_verdict")
     return None
 
 
@@ -159,3 +159,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

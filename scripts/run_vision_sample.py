@@ -12,8 +12,8 @@ from app.vision import FakeVisionClient, VisionService
 
 FAKE_RESPONSE = {
     "brand_name": "Acme Wine",
-    "product_class": "Cabernet Sauvignon",
-    "producer_name": "Acme Winery",
+    "class_type": "Cabernet Sauvignon",
+    "producer": "Acme Winery",
     "country_of_origin": "USA",
     "abv": "45% Alc./Vol. (90 Proof)",
     "net_contents": "750 mL",
