@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, ValidationError
 
 from app.comparison.engine import verify_label
-from app.comparison.models import ApplicationData, ExtractedLabel, VerificationResult
+from app.comparison.models import ApplicationData, ExtractedLabel, FieldResult, VerificationResult
 from app.vision import (
     VisionImageError,
     VisionServiceAuthError,
@@ -51,8 +51,22 @@ class ErrorResponse(BaseModel):
     error: ErrorDetail
 
 
+class FieldResponse(BaseModel):
+    field: str
+    match_type: str
+    expected: str | float
+    found: str | float | None
+    status: Literal["PASS", "FAIL"]
+
+
+class VerificationResponse(BaseModel):
+    overall_verdict: Literal["APPROVED", "NEEDS_REVIEW"]
+    fields: list[FieldResponse]
+    latency_ms: int
+
+
 class VerifyResponse(BaseModel):
-    verification: VerificationResult
+    verification: VerificationResponse
     extracted_label: ExtractedLabel
     latency_ms: int
 
@@ -64,18 +78,16 @@ class BatchItemInput(BaseModel):
 
 
 class BatchSummary(BaseModel):
-    total: int
     passed: int
     needs_review: int
-    failed_to_process: int
-    latency_ms: int
+    total: int
 
 
 class BatchItemResult(BaseModel):
     client_id: str
     filename: str | None = None
     status: Literal["COMPLETED", "FAILED"]
-    verification: VerificationResult | None = None
+    verification: VerificationResponse | None = None
     extracted_label: ExtractedLabel | None = None
     latency_ms: int
     error: ErrorDetail | None = None
@@ -116,6 +128,35 @@ def parse_application_data(raw_application_data: str) -> ApplicationData:
             "invalid_application_data",
             "Some required application fields are missing or invalid.",
         ) from exc
+
+
+MATCH_TYPES = {
+    "brand_name": "fuzzy",
+    "product_class": "fuzzy",
+    "producer_name": "fuzzy",
+    "country_of_origin": "normalized",
+    "abv": "numeric",
+    "net_contents": "numeric",
+    "government_warning": "exact",
+}
+
+
+def field_response(field: FieldResult) -> FieldResponse:
+    return FieldResponse(
+        field=field.field,
+        match_type=MATCH_TYPES.get(field.field, "unknown"),
+        expected=field.application_value,
+        found=field.extracted_value,
+        status=field.status,
+    )
+
+
+def verification_response(verification: VerificationResult, latency_ms: int) -> VerificationResponse:
+    return VerificationResponse(
+        overall_verdict=verification.verdict,
+        fields=[field_response(field) for field in verification.fields],
+        latency_ms=latency_ms,
+    )
 
 
 def parse_batch_items(raw_items: str) -> list[BatchItemInput]:
@@ -271,7 +312,7 @@ async def verify(
             failures=failures,
         )
         return VerifyResponse(
-            verification=verification,
+            verification=verification_response(verification, latency_ms),
             extracted_label=extracted,
             latency_ms=latency_ms,
         )
@@ -354,13 +395,14 @@ async def process_batch_item(
                 filename,
             )
         verification = verify_label(item.application_data, extracted)
+        latency_ms = elapsed_ms()
         return BatchItemResult(
             client_id=item.client_id,
             filename=filename,
             status="COMPLETED",
-            verification=verification,
+            verification=verification_response(verification, latency_ms),
             extracted_label=extracted,
-            latency_ms=elapsed_ms(),
+            latency_ms=latency_ms,
         )
     except VisionServiceTimeout as exc:
         log_exception_details("vision_timeout", elapsed_ms(), exc)
@@ -445,14 +487,14 @@ async def verify_batch(
         for result in results
         if result.status == "COMPLETED"
         and result.verification is not None
-        and result.verification.verdict == "PASS"
+        and result.verification.overall_verdict == "APPROVED"
     )
     needs_review = sum(
         1
         for result in results
         if result.status == "COMPLETED"
         and result.verification is not None
-        and result.verification.verdict == "NEEDS_REVIEW"
+        and result.verification.overall_verdict == "NEEDS_REVIEW"
     )
     failed_to_process = sum(1 for result in results if result.status == "FAILED")
     logger.info(
@@ -467,11 +509,9 @@ async def verify_batch(
     )
     return BatchVerifyResponse(
         summary=BatchSummary(
-            total=len(results),
             passed=passed,
             needs_review=needs_review,
-            failed_to_process=failed_to_process,
-            latency_ms=latency_ms,
+            total=len(results),
         ),
         results=results,
     )

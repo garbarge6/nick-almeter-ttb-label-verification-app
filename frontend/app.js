@@ -309,8 +309,8 @@ function buildBatchFormData() {
 
 function renderSingleResults(data) {
   const verification = data.verification;
-  const verdict = verification.verdict;
-  const approved = verdict === "PASS";
+  const verdict = verification.overall_verdict;
+  const approved = verdict === "APPROVED";
 
   verdictText.textContent = approved ? "APPROVED" : "NEEDS REVIEW";
   verdictBanner.className = approved ? "verdict-banner verdict-pass" : "verdict-banner verdict-fail";
@@ -334,7 +334,6 @@ function renderBatchResults(data) {
     summaryBox("Total", summary.total),
     summaryBox("Approved", summary.passed),
     summaryBox("Needs Review", summary.needs_review),
-    summaryBox("Could Not Process", summary.failed_to_process),
   );
   batchLatencyText.textContent = Number.isInteger(summary.latency_ms)
     ? `Time: ${(summary.latency_ms / 1000).toFixed(1)} seconds`
@@ -362,12 +361,12 @@ function renderBatchResult(result, index) {
   const title = result.filename || `Label ${index + 1}`;
   const statusText = result.status === "FAILED"
     ? "COULD NOT PROCESS"
-    : result.verification.verdict === "PASS"
+    : result.verification.overall_verdict === "APPROVED"
       ? "APPROVED"
       : "NEEDS REVIEW";
   const statusClass = result.status === "FAILED"
     ? "batch-status-failed"
-    : result.verification.verdict === "PASS"
+    : result.verification.overall_verdict === "APPROVED"
       ? "batch-status-pass"
       : "batch-status-review";
 
@@ -431,8 +430,8 @@ function renderFieldResult(field) {
     reason.textContent = failReasons[field.field] || "The label does not match the application.";
     row.appendChild(reason);
 
-    row.appendChild(valueBlock("What the application says", field.application_value));
-    row.appendChild(valueBlock("What the label says", field.extracted_value));
+    row.appendChild(valueBlock("What the application says", field.expected));
+    row.appendChild(valueBlock("What the label says", field.found));
   }
 
   return row;

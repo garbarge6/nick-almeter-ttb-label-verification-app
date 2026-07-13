@@ -114,11 +114,9 @@ def test_batch_all_pass_summary_and_item_results() -> None:
     assert body["summary"]["total"] == 3
     assert body["summary"]["passed"] == 3
     assert body["summary"]["needs_review"] == 0
-    assert body["summary"]["failed_to_process"] == 0
-    assert isinstance(body["summary"]["latency_ms"], int)
     assert [result["client_id"] for result in body["results"]] == ["label-1", "label-2", "label-3"]
     assert all(result["status"] == "COMPLETED" for result in body["results"])
-    assert all(result["verification"]["verdict"] == "PASS" for result in body["results"])
+    assert all(result["verification"]["overall_verdict"] == "APPROVED" for result in body["results"])
     assert len(service.calls) == 3
 
 
@@ -139,19 +137,17 @@ def test_batch_mixed_summary_counts_and_expected_found() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["summary"] == {
-        "total": 3,
         "passed": 1,
         "needs_review": 1,
-        "failed_to_process": 1,
-        "latency_ms": body["summary"]["latency_ms"],
+        "total": 3,
     }
-    assert body["results"][0]["verification"]["verdict"] == "PASS"
-    assert body["results"][1]["verification"]["verdict"] == "NEEDS_REVIEW"
+    assert body["results"][0]["verification"]["overall_verdict"] == "APPROVED"
+    assert body["results"][1]["verification"]["overall_verdict"] == "NEEDS_REVIEW"
     brand = next(
         field for field in body["results"][1]["verification"]["fields"] if field["field"] == "brand_name"
     )
-    assert brand["application_value"] == "ACME WINE"
-    assert brand["extracted_value"] == "Different Brand"
+    assert brand["expected"] == "ACME WINE"
+    assert brand["found"] == "Different Brand"
     assert body["results"][2]["status"] == "FAILED"
     assert body["results"][2]["error"]["code"] == "invalid_file_type"
     assert len(service.calls) == 2
@@ -169,7 +165,6 @@ def test_batch_one_missing_image_does_not_fail_whole_batch() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["summary"]["passed"] == 1
-    assert body["summary"]["failed_to_process"] == 1
     assert body["results"][1]["error"]["code"] == "missing_image"
 
 

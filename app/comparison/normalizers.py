@@ -19,6 +19,8 @@ COUNTRY_SYNONYMS = {
     "czech republic": "czech republic",
 }
 
+LEGAL_SUFFIX_TOKENS = {"llc", "ltd", "inc", "co", "corp", "corporation", "company"}
+
 NET_CONTENT_UNITS = {
     "ml": 1.0,
     "milliliter": 1.0,
@@ -35,7 +37,12 @@ NET_CONTENT_UNITS = {
 def normalize_text(value: str) -> str:
     lowered = value.casefold().strip()
     without_punctuation = re.sub(r"[^\w\s]", " ", lowered)
-    return re.sub(r"\s+", " ", without_punctuation).strip()
+    tokens = [
+        token
+        for token in re.sub(r"\s+", " ", without_punctuation).strip().split()
+        if token not in LEGAL_SUFFIX_TOKENS
+    ]
+    return " ".join(tokens)
 
 
 def token_set_ratio(left: str, right: str) -> float:
@@ -53,11 +60,7 @@ def token_set_ratio(left: str, right: str) -> float:
     left_text = " ".join(common + left_diff)
     right_text = " ".join(common + right_diff)
 
-    ratios = [
-        SequenceMatcher(None, left_text, right_text).ratio(),
-        SequenceMatcher(None, common_text, left_text).ratio() if common_text else 0.0,
-        SequenceMatcher(None, common_text, right_text).ratio() if common_text else 0.0,
-    ]
+    ratios = [SequenceMatcher(None, left_text, right_text).ratio()]
     return round(max(ratios) * 100, 2)
 
 
@@ -73,6 +76,10 @@ def parse_abv_percent(value: str | float | int) -> float | None:
     match = re.search(r"(\d+(?:\.\d+)?)\s*%", value)
     if match:
         return float(match.group(1))
+
+    match = re.search(r"\b(\d+(?:\.\d+)?)\s*proof\b", value, flags=re.IGNORECASE)
+    if match:
+        return float(match.group(1)) / 2
 
     match = re.search(r"\b(\d+(?:\.\d+)?)\b", value)
     if match:

@@ -115,7 +115,7 @@ def test_verify_happy_path_returns_full_result_and_latency(client: TestClient) -
 
     assert response.status_code == 200
     body = response.json()
-    assert body["verification"]["verdict"] == "PASS"
+    assert body["verification"]["overall_verdict"] == "APPROVED"
     assert len(body["verification"]["fields"]) == 7
     assert body["extracted_label"]["government_warning"] == GOVERNMENT_WARNING
     assert isinstance(body["latency_ms"], int)
@@ -136,11 +136,11 @@ def test_verify_failure_includes_expected_found_and_verdict(client: TestClient) 
 
     assert response.status_code == 200
     body = response.json()
-    assert body["verification"]["verdict"] == "NEEDS_REVIEW"
+    assert body["verification"]["overall_verdict"] == "NEEDS_REVIEW"
     brand = next(field for field in body["verification"]["fields"] if field["field"] == "brand_name")
     assert brand["status"] == "FAIL"
-    assert brand["application_value"] == "ACME WINE"
-    assert brand["extracted_value"] == "Different Brand"
+    assert brand["expected"] == "ACME WINE"
+    assert brand["found"] == "Different Brand"
 
 
 def test_verify_warning_failure_surfaces_extracted_warning_text(client: TestClient) -> None:
@@ -158,10 +158,10 @@ def test_verify_warning_failure_surfaces_extracted_warning_text(client: TestClie
     warning = next(
         field for field in body["verification"]["fields"] if field["field"] == "government_warning"
     )
-    assert body["verification"]["verdict"] == "NEEDS_REVIEW"
+    assert body["verification"]["overall_verdict"] == "NEEDS_REVIEW"
     assert body["extracted_label"]["government_warning"] == title_case
     assert warning["status"] == "FAIL"
-    assert warning["extracted_value"] == title_case
+    assert warning["found"] == title_case
 
 
 def test_bad_file_type_returns_readable_400(client: TestClient) -> None:

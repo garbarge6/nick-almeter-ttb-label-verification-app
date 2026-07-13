@@ -171,6 +171,6 @@ def verify_label(application: ApplicationData, extracted: ExtractedLabel) -> Ver
         ),
     ]
     fields = [compare() for compare in comparisons]
-    verdict = "NEEDS_REVIEW" if any(field.status == "FAIL" for field in fields) else "PASS"
+    verdict = "NEEDS_REVIEW" if any(field.status == "FAIL" for field in fields) else "APPROVED"
 
     return VerificationResult(verdict=verdict, fields=fields)

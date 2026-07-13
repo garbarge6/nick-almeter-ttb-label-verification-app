@@ -4,7 +4,7 @@ from pydantic import BaseModel, field_validator
 
 
 FieldStatus = Literal["PASS", "FAIL"]
-Verdict = Literal["PASS", "NEEDS_REVIEW"]
+Verdict = Literal["APPROVED", "NEEDS_REVIEW"]
 
 
 class ApplicationData(BaseModel):
@@ -40,6 +40,8 @@ class ExtractedLabel(BaseModel):
     abv: str | float | None = None
     net_contents: str | None = None
     government_warning: str | None = None
+    raw_text: str | None = None
+    extraction_confidence: float | None = None
 
 
 class FieldResult(BaseModel):
@@ -56,3 +58,4 @@ class FieldResult(BaseModel):
 class VerificationResult(BaseModel):
     verdict: Verdict
     fields: list[FieldResult]
+    latency_ms: int | None = None

@@ -8,6 +8,7 @@ from app.comparison.engine import (
     verify_label,
 )
 from app.comparison.models import ApplicationData, ExtractedLabel
+from app.comparison.normalizers import parse_abv_percent
 
 
 def test_brand_case_only_difference_passes() -> None:
@@ -17,6 +18,15 @@ def test_brand_case_only_difference_passes() -> None:
     assert result.score is not None
     assert result.score >= 85
 
+
+def test_short_brand_does_not_match_longer_superset() -> None:
+    result = compare_brand_name("ACME", "ACME RESERVE SPECIAL EDITION")
+
+    assert result.status == "FAIL"
+
+
+def test_parse_abv_percent_converts_proof_to_percent() -> None:
+    assert parse_abv_percent("90 Proof") == 45.0
 
 def test_abv_ignores_proof_text_when_matching_percent() -> None:
     result = compare_abv("45%", "45% Alc./Vol. (90 Proof)")
@@ -123,7 +133,7 @@ def test_verify_label_passes_when_all_fields_pass() -> None:
 
     result = verify_label(application, extracted)
 
-    assert result.verdict == "PASS"
+    assert result.verdict == "APPROVED"
     assert all(field.status == "PASS" for field in result.fields)
 
 

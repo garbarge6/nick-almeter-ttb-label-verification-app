@@ -43,7 +43,7 @@ The government warning is checked as an exact, case-sensitive string match. Othe
 - Single-label verification
 - Batch upload and verification
 - Per-field `PASS` / `FAIL` results
-- Overall `PASS` / `NEEDS_REVIEW` verdict
+- Overall `APPROVED` / `NEEDS_REVIEW` verdict
 - Exact case-sensitive government warning comparison
 - Fuzzy brand/product/producer comparison
 - Country synonym normalization
@@ -162,7 +162,7 @@ application_data: JSON string matching ApplicationData
 Returns:
 
 ```text
-verification: per-field results and verdict
+verification: per-field results, overall_verdict, and latency_ms
 extracted_label: structured extracted fields
 latency_ms: endpoint latency
 ```
@@ -182,7 +182,6 @@ Batch response includes:
 summary.total
 summary.passed
 summary.needs_review
-summary.failed_to_process
 results[] with individual details
 ```
 
@@ -267,7 +266,7 @@ Automated local tests:
 
 ```text
 uv run pytest
-49 passed, 1 warning
+56 passed, 1 warning
 ```
 
 Local mocked checklist:
@@ -281,7 +280,7 @@ wrong-caps warning: NEEDS_REVIEW
 correct exact warning: PASS
 wrong file type: readable 400
 empty submit: readable 422
-batch summary: total 3, passed 1, needs_review 1, failed_to_process 1
+batch summary: total 3, passed 1, needs_review 1
 ```
 
 Live checklist against Render:
@@ -298,7 +297,7 @@ Mismatch: 200, NEEDS_REVIEW, 8337 ms
 Imperfect image: 200, NEEDS_REVIEW, 3451 ms
 Wrong file type: 400, readable invalid_file_type error
 Empty submit: 422, readable invalid_request error
-Batch summary: total 3, passed 0, needs_review 2, failed_to_process 1, latency 5154 ms
+Batch summary: total 3, passed 0, needs_review 2
 ```
 
 Performance note: two warm single-label runs completed under 5 seconds, but the first run took 11.1 seconds. The strict under-5-second gate is not fully demonstrated on Render yet, likely due to cold start and/or first vision request overhead.
