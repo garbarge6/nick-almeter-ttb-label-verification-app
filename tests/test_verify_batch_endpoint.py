@@ -206,6 +206,35 @@ def test_batch_larger_than_max_returns_readable_413() -> None:
     assert response.json()["detail"]["error"]["code"] == "batch_too_large"
 
 
+def test_batch_more_uploaded_images_than_cap_returns_413() -> None:
+    app.dependency_overrides[get_vision_service] = lambda: BatchFakeVisionService([extracted_label()])
+    client = TestClient(app)
+
+    response = post_batch(client, batch_items(1), image_files(11))
+
+    assert response.status_code == 413
+    assert response.json()["detail"]["error"]["code"] == "batch_too_large"
+
+
+def test_batch_oversized_image_fails_item_without_calling_vision() -> None:
+    service = BatchFakeVisionService([extracted_label()])
+    app.dependency_overrides[get_vision_service] = lambda: service
+    client = TestClient(app)
+    oversized = b"0" * (8 * 1024 * 1024 + 1)
+
+    response = post_batch(
+        client,
+        batch_items(1),
+        [("images", ("too-large.png", oversized, "image/png"))],
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"] == {"passed": 0, "needs_review": 0, "total": 1}
+    assert body["results"][0]["status"] == "FAILED"
+    assert body["results"][0]["error"]["code"] == "image_too_large"
+    assert service.calls == []
+
 def test_batch_processes_items_concurrently_with_fake_slow_service() -> None:
     service = BatchFakeVisionService([extracted_label(), extracted_label(), extracted_label()], delay=0.15)
     app.dependency_overrides[get_vision_service] = lambda: service

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: nick-almeter-ttb-label-verification-app
+    env: python
+    plan: free
+    buildCommand: uv sync --locked --no-dev
+    startCommand: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.13
+      - key: APP_ENV
+        value: production
+      - key: APP_VERSION
+        value: 0.0.1
+      - key: VISION_MODEL
+        value: gpt-4o-mini
+      - key: VISION_TIMEOUT_SECONDS
+        value: "4"
+      - key: VISION_IMAGE_MAX_SIDE
+        value: "1200"
+      - key: VISION_JPEG_QUALITY
+        value: "76"
+      - key: BATCH_MAX_ITEMS
+        value: "10"
+      - key: BATCH_CONCURRENCY_LIMIT
+        value: "3"
+      - key: OPENAI_API_KEY
+        sync: false

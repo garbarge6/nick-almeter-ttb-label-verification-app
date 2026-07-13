@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from openai import APITimeoutError, AuthenticationError, PermissionDeniedError
 from pydantic import ValidationError
 
 from app.comparison.models import ExtractedLabel
@@ -170,14 +171,11 @@ class VisionService:
                 timeout_seconds=self.settings.timeout_seconds,
             )
             vision_ms = _elapsed_ms(vision_start)
-        except TimeoutError as exc:
+        except (TimeoutError, APITimeoutError) as exc:
             raise VisionServiceTimeout("Vision model request timed out.") from exc
+        except (AuthenticationError, PermissionDeniedError) as exc:
+            raise VisionServiceAuthError("Vision service is not configured or authorized.") from exc
         except Exception as exc:
-            class_name = exc.__class__.__name__
-            if class_name in {"APITimeoutError", "TimeoutException"}:
-                raise VisionServiceTimeout("Vision model request timed out.") from exc
-            if class_name in {"AuthenticationError", "PermissionDeniedError"}:
-                raise VisionServiceAuthError("Vision service is not configured or authorized.") from exc
             raise VisionServiceError("Vision model request failed.") from exc
 
         parsed = _coerce_extracted_label(response)

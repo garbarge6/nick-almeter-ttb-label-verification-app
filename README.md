@@ -7,7 +7,6 @@ A stateless proof-of-concept for checking alcohol label images against applicati
 - Live URL: https://nick-almeter-ttb-label-verification-app.onrender.com
 - Health check: https://nick-almeter-ttb-label-verification-app.onrender.com/health
 
-Do not submit until the live URL is filled in and the live checklist below has been run.
 
 ## How To Use The App
 
@@ -133,7 +132,7 @@ uv run python -m pytest
 
 ## Deployment
 
-Recommended free-tier path: Render Web Service.
+Recommended path: Render Web Service. The repo includes `render.yaml` so the service can be recreated from source instead of dashboard-only settings.
 
 ```text
 Runtime: Python
@@ -142,7 +141,9 @@ Start command: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
 Health check path: /health
 ```
 
-Set environment variables in the host dashboard only. Do not commit `.env`.
+Set `OPENAI_API_KEY` in the host dashboard or Render blueprint secret prompt only. Do not commit `.env`.
+
+Cold-start disclaimer: the committed `render.yaml` uses Render free tier for reproducibility, and the latest live measurement shows cold or idle requests can exceed the strict 5-second target. The UI shows a delayed message after about 3 seconds (`First request after idle can take ~10 s while the server wakes up.`), so reviewers see the wait as a known free-tier cold-start limitation rather than a broken form. Meeting the strict deployed under-5-second gate requires a paid Always On instance or equivalent hosting that does not sleep.
 
 ## API
 
@@ -345,14 +346,14 @@ The project was built with an AI-native Plan / Review / Execute cadence using Co
 
 - Vision extraction can misread blurry, angled, cropped, low-resolution, or glare-heavy images.
 - Exact warning comparison may fail if OCR misses a colon, capital letter, punctuation mark, or word.
-- Free-tier hosting can cold start, which may exceed the 5-second target even when warm requests are faster.
+- Free-tier hosting can cold start, which may exceed the 5-second target even when warm requests are faster; the UI warns after a few seconds, and strict compliance needs non-sleeping hosting.
 - Batch progress is request-level, not live per-item streaming.
 - No database, saved history, user accounts, audit trail, or manual review queue is included.
 
 ## Tradeoffs
 
 - The fuzzy threshold is fixed at `85.0`: high enough to avoid many false approvals, but conservative labels may still require review.
-- Batch size is capped at `10` to limit vision API cost, timeout risk, and free-tier resource spikes.
+- Batch size is capped at `10` uploaded images and `10` JSON items to limit memory, vision API cost, timeout risk, and free-tier resource spikes.
 - Batch concurrency defaults to `3` to improve throughput without launching every vision request at once.
 - The API keeps failed batch items in `results[]` instead of adding extra summary keys, so the summary remains the spec shape `{passed, needs_review, total}`.
 - The frontend is plain HTML/CSS/JavaScript to reduce deployment complexity; it gives up richer framework tooling.
@@ -368,12 +369,12 @@ model: gpt-4o-mini
 single-label timeout: 4 seconds
 ```
 
-Local preprocessing measurement on `images/jim.png` during hardening:
+Local preprocessing measurement on committed `samples/sample-label.png` during hardening:
 
 ```text
-original bytes: 2,639,566
-processed size: 1200 x 840
-processed bytes median: 202,986
+original bytes: 60,666
+processed size: 1200 x 800
+processed bytes median: 58,868
 ```
 
 Live single-label latency should be measured after deployment with at least 20 runs so p95 is meaningful:
@@ -407,7 +408,7 @@ Automated local tests:
 
 ```text
 uv run pytest
-56 passed, 1 warning
+59 passed, 1 warning
 ```
 
 Local mocked checklist:

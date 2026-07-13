@@ -3,8 +3,6 @@ from functools import lru_cache
 import json
 import logging
 import os
-import traceback
-from pathlib import Path
 import time
 from typing import Any, Literal
 
@@ -24,8 +22,6 @@ from app.vision import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-DEBUG_LOG_PATH = Path("logs/verify-debug.log")
-
 ALLOWED_IMAGE_TYPES = {
     "image/png",
     "image/jpeg",
@@ -210,17 +206,39 @@ async def read_valid_image(image: UploadFile) -> bytes:
     return image_bytes
 
 
-async def read_batch_images(images: list[UploadFile]) -> list[tuple[UploadFile, bytes]]:
+async def read_batch_images(images: list[UploadFile]) -> list[tuple[UploadFile, bytes | None, ErrorDetail | None]]:
     if not images:
         raise error_response(400, "invalid_batch", "Please add at least one label image.")
 
-    stored: list[tuple[UploadFile, bytes]] = []
+    if len(images) > BATCH_MAX_ITEMS:
+        raise error_response(413, "batch_too_large", f"Please upload no more than {BATCH_MAX_ITEMS} label images at once.")
+
+    stored: list[tuple[UploadFile, bytes | None, ErrorDetail | None]] = []
     for image in images:
-        stored.append((image, await image.read()))
+        if image.content_type not in ALLOWED_IMAGE_TYPES:
+            stored.append((image, None, ErrorDetail(code="invalid_file_type", message=INVALID_IMAGE_TYPE_MESSAGE)))
+            continue
+
+        if image.size is not None and image.size > MAX_IMAGE_BYTES:
+            stored.append((image, None, ErrorDetail(code="image_too_large", message="Please upload an image smaller than 8 MB.")))
+            continue
+
+        image_bytes = await image.read(MAX_IMAGE_BYTES + 1)
+        if not image_bytes:
+            stored.append((image, image_bytes, ErrorDetail(code="invalid_image", message="Please upload a non-empty image file.")))
+            continue
+
+        if len(image_bytes) > MAX_IMAGE_BYTES:
+            stored.append((image, None, ErrorDetail(code="image_too_large", message="Please upload an image smaller than 8 MB.")))
+            continue
+
+        stored.append((image, image_bytes, None))
     return stored
 
 
-def validate_batch_image(image: UploadFile, image_bytes: bytes) -> ErrorDetail | None:
+def validate_batch_image(image: UploadFile, image_bytes: bytes | None, prevalidated_error: ErrorDetail | None = None) -> ErrorDetail | None:
+    if prevalidated_error is not None:
+        return prevalidated_error
     if image.content_type not in ALLOWED_IMAGE_TYPES:
         return ErrorDetail(code="invalid_file_type", message=INVALID_IMAGE_TYPE_MESSAGE)
     if not image_bytes:
@@ -255,22 +273,10 @@ def log_verify_finished(
 
 
 def log_exception_details(error_code: str, latency_ms: int, exc: Exception) -> None:
-    DEBUG_LOG_PATH.parent.mkdir(exist_ok=True)
-    debug_text = "\n".join(
-        [
-            "--- verify exception ---",
-            f"error_code={error_code}",
-            f"latency_ms={latency_ms}",
-            "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
-        ]
-    )
     logger.exception(
         "verify_exception",
         extra={"latency_ms": latency_ms, "error_code": error_code},
     )
-    with DEBUG_LOG_PATH.open("a", encoding="utf-8") as log_file:
-        log_file.write(debug_text)
-        log_file.write("\n")
 
 
 @router.post(
@@ -356,7 +362,7 @@ async def verify(
 
 async def process_batch_item(
     item: BatchItemInput,
-    image_files: list[tuple[UploadFile, bytes]],
+    image_files: list[tuple[UploadFile, bytes | None, ErrorDetail | None]],
     vision_service: VisionService,
     semaphore: asyncio.Semaphore,
 ) -> BatchItemResult:
@@ -376,9 +382,9 @@ async def process_batch_item(
                 error=ErrorDetail(code="missing_image", message="A label image is missing."),
             )
 
-        image, image_bytes = image_files[item.image_index]
+        image, image_bytes, prevalidated_error = image_files[item.image_index]
         filename = image.filename
-        image_error = validate_batch_image(image, image_bytes)
+        image_error = validate_batch_image(image, image_bytes, prevalidated_error)
         if image_error:
             return BatchItemResult(
                 client_id=item.client_id,

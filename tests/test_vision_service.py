@@ -1,6 +1,8 @@
 from io import BytesIO
 
+import httpx
 import pytest
+from openai import APITimeoutError
 from PIL import Image
 
 from app.comparison.engine import GOVERNMENT_WARNING
@@ -33,6 +35,11 @@ class TimeoutClient:
     def extract_label(self, **kwargs: object) -> object:
         raise TimeoutError("too slow")
 
+
+class OpenAITimeoutClient:
+    def extract_label(self, **kwargs: object) -> object:
+        del kwargs
+        raise APITimeoutError(request=httpx.Request("POST", "https://api.openai.test"))
 
 class FailureClient:
     def extract_label(self, **kwargs: object) -> object:
@@ -116,6 +123,12 @@ def test_timeout_raises_controlled_timeout_error() -> None:
     with pytest.raises(VisionServiceTimeout):
         service.extract_label(make_label_image_bytes())
 
+
+def test_openai_timeout_exception_raises_controlled_timeout_error() -> None:
+    service = VisionService(client=OpenAITimeoutClient())
+
+    with pytest.raises(VisionServiceTimeout):
+        service.extract_label(make_label_image_bytes())
 
 def test_api_failure_raises_controlled_service_error() -> None:
     service = VisionService(client=FailureClient())

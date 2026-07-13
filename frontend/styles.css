@@ -133,6 +133,17 @@ button:focus {
   display: none;
 }
 
+.cold-start-note {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-left: 5px solid #0b5cab;
+  border-radius: 8px;
+  background: #eef6ff;
+  color: #173a5e;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.35;
+}
 .submit-button {
   width: 100%;
   min-height: 64px;
