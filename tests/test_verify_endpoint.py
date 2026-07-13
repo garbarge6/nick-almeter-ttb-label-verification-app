@@ -180,10 +180,26 @@ def test_bad_file_type_returns_readable_400(client: TestClient) -> None:
         "detail": {
             "error": {
                 "code": "invalid_file_type",
-                "message": "Please upload a PNG, JPG, or WebP image.",
+                "message": "Please upload an image file.",
             }
         }
     }
+
+
+def test_heic_image_type_is_accepted(client: TestClient) -> None:
+    service = override_vision(FakeVisionService())
+
+    response = post_verify(
+        client,
+        application_data=application_payload(),
+        image_bytes=b"fake-heic-bytes",
+        filename="label.heic",
+        content_type="image/heic",
+    )
+
+    assert response.status_code == 200
+    assert len(service.calls) == 1
+    assert service.calls[0]["filename"] == "label.heic"
 
 
 def test_empty_image_returns_readable_400(client: TestClient) -> None:

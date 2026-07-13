@@ -26,7 +26,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 DEBUG_LOG_PATH = Path("logs/verify-debug.log")
 
-ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
+ALLOWED_IMAGE_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "image/tiff",
+    "image/gif",
+    "image/bmp",
+}
+INVALID_IMAGE_TYPE_MESSAGE = "Please upload an image file."
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 BATCH_MAX_ITEMS = int(os.getenv("BATCH_MAX_ITEMS", "10"))
 BATCH_CONCURRENCY_LIMIT = int(os.getenv("BATCH_CONCURRENCY_LIMIT", "3"))
@@ -138,7 +148,7 @@ async def read_valid_image(image: UploadFile) -> bytes:
         raise error_response(
             400,
             "invalid_file_type",
-            "Please upload a PNG, JPG, or WebP image.",
+            INVALID_IMAGE_TYPE_MESSAGE,
         )
 
     image_bytes = await image.read()
@@ -171,7 +181,7 @@ async def read_batch_images(images: list[UploadFile]) -> list[tuple[UploadFile, 
 
 def validate_batch_image(image: UploadFile, image_bytes: bytes) -> ErrorDetail | None:
     if image.content_type not in ALLOWED_IMAGE_TYPES:
-        return ErrorDetail(code="invalid_file_type", message="Please upload a PNG, JPG, or WebP image.")
+        return ErrorDetail(code="invalid_file_type", message=INVALID_IMAGE_TYPE_MESSAGE)
     if not image_bytes:
         return ErrorDetail(code="invalid_image", message="Please upload a non-empty image file.")
     if len(image_bytes) > MAX_IMAGE_BYTES:

@@ -5,6 +5,7 @@ const batchPanel = document.getElementById("batch-panel");
 const form = document.getElementById("verify-form");
 const imageInput = document.getElementById("label-image");
 const selectedFile = document.getElementById("selected-file");
+const singleImagePreview = document.getElementById("single-image-preview");
 const formMessage = document.getElementById("form-message");
 const submitButton = document.getElementById("submit-button");
 const batchItemsContainer = document.getElementById("batch-items");
@@ -23,6 +24,8 @@ const batchResultsSection = document.getElementById("batch-results-section");
 const batchSummaryCounts = document.getElementById("batch-summary-counts");
 const batchLatencyText = document.getElementById("batch-latency-text");
 const batchResults = document.getElementById("batch-results");
+const singleResetButton = document.getElementById("single-reset-button");
+const batchResetButton = document.getElementById("batch-reset-button");
 
 const fieldLabels = {
   brand_name: "Brand Name",
@@ -56,15 +59,17 @@ const requiredFields = [
 
 const MAX_BATCH_ITEMS = 10;
 let batchItemCounter = 0;
-let progressTimer = null;
+let loadingSlowTimer = null;
 
 singleTab.addEventListener("click", () => setMode("single"));
 batchTab.addEventListener("click", () => setMode("batch"));
 addBatchItemButton.addEventListener("click", () => addBatchItem());
 batchSubmitButton.addEventListener("click", submitBatch);
+singleResetButton.addEventListener("click", resetSingleForm);
+batchResetButton.addEventListener("click", resetBatchForm);
 
 imageInput.addEventListener("change", () => {
-  selectedFile.textContent = imageInput.files.length ? imageInput.files[0].name : "No image selected";
+  updateImagePreview(imageInput, selectedFile, singleImagePreview);
   hideMessage(formMessage);
 });
 
@@ -136,6 +141,26 @@ function buildSingleFormData() {
   return formData;
 }
 
+function updateImagePreview(input, fileLabel, previewImage) {
+  const file = input.files[0];
+  if (previewImage.dataset.previewUrl) {
+    URL.revokeObjectURL(previewImage.dataset.previewUrl);
+    delete previewImage.dataset.previewUrl;
+  }
+
+  fileLabel.textContent = file ? file.name : "No image selected";
+  if (!file) {
+    previewImage.removeAttribute("src");
+    previewImage.hidden = true;
+    return;
+  }
+
+  const previewUrl = URL.createObjectURL(file);
+  previewImage.src = previewUrl;
+  previewImage.dataset.previewUrl = previewUrl;
+  previewImage.hidden = false;
+}
+
 function readApplicationData(scope) {
   const applicationData = {};
   for (const field of requiredFields) {
@@ -153,6 +178,9 @@ function addBatchItem() {
 
   batchItemCounter += 1;
   const item = document.createElement("article");
+  const rowId = `batch-row-${batchItemCounter}`;
+  const imageId = `${rowId}-image`;
+  const warningId = `${rowId}-government-warning`;
   item.className = "batch-item";
   item.dataset.clientId = `label-${batchItemCounter}`;
   item.innerHTML = `
@@ -161,41 +189,48 @@ function addBatchItem() {
       <button class="remove-button" type="button" aria-label="Remove this label">Remove</button>
     </div>
     <div class="field image-field">
-      <label>Label Image</label>
-      <input name="image" type="file" accept="image/png,image/jpeg,image/webp">
+      <label for="${imageId}">Label Image</label>
+      <input id="${imageId}" name="image" type="file" accept="image/*">
       <div class="selected-file" aria-live="polite">No image selected</div>
+      <img class="image-preview" alt="Selected label preview" hidden>
     </div>
     <div class="field-grid">
-      ${batchTextField("brand_name", "Brand Name")}
-      ${batchTextField("product_class", "Product Class")}
-      ${batchTextField("producer_name", "Producer Name")}
-      ${batchTextField("country_of_origin", "Country of Origin")}
-      ${batchTextField("abv", "Alcohol %")}
-      ${batchTextField("net_contents", "Bottle Size")}
+      ${batchTextField("brand_name", "Brand Name", rowId)}
+      ${batchTextField("product_class", "Product Class", rowId)}
+      ${batchTextField("producer_name", "Producer Name", rowId)}
+      ${batchTextField("country_of_origin", "Country of Origin", rowId)}
+      ${batchTextField("abv", "Alcohol %", rowId, "number", "0.1")}
+      ${batchTextField("net_contents", "Bottle Size", rowId, "number", "1")}
     </div>
     <div class="field">
-      <label>Government Warning</label>
-      <textarea name="government_warning" rows="5"></textarea>
+      <label for="${warningId}">Government Warning</label>
+      <textarea id="${warningId}" name="government_warning" rows="5"></textarea>
     </div>
   `;
 
   const fileInput = item.querySelector('input[name="image"]');
   const fileName = item.querySelector(".selected-file");
+  const previewImage = item.querySelector(".image-preview");
   fileInput.addEventListener("change", () => {
-    fileName.textContent = fileInput.files.length ? fileInput.files[0].name : "No image selected";
+    updateImagePreview(fileInput, fileName, previewImage);
   });
   item.querySelector(".remove-button").addEventListener("click", () => {
+    if (previewImage.dataset.previewUrl) {
+      URL.revokeObjectURL(previewImage.dataset.previewUrl);
+    }
     item.remove();
     renumberBatchItems();
   });
   batchItemsContainer.appendChild(item);
 }
 
-function batchTextField(name, label) {
+function batchTextField(name, label, rowId, type = "text", step = "") {
+  const inputId = `${rowId}-${name.replaceAll("_", "-")}`;
+  const numericAttributes = type === "number" ? ` step="${step}" inputmode="decimal"` : "";
   return `
     <div class="field">
-      <label>${label}</label>
-      <input name="${name}" type="text" autocomplete="off">
+      <label for="${inputId}">${label}</label>
+      <input id="${inputId}" name="${name}" type="${type}"${numericAttributes} autocomplete="off">
     </div>
   `;
 }
@@ -217,9 +252,6 @@ async function submitBatch() {
   }
 
   setLoading(true, "Checking labels...", `Checking ${buildResult.count} labels.`);
-  progressTimer = window.setTimeout(() => {
-    loadingText.textContent = `Still checking ${buildResult.count} labels. Results will appear here when the batch is done.`;
-  }, 700);
 
   try {
     const response = await fetch("/verify/batch", {
@@ -236,10 +268,6 @@ async function submitBatch() {
   } catch (error) {
     showMessage(batchMessage, error.message || "Something went wrong. Please try again.");
   } finally {
-    if (progressTimer) {
-      window.clearTimeout(progressTimer);
-      progressTimer = null;
-    }
     setLoading(false);
   }
 }
@@ -448,7 +476,34 @@ function clearResults() {
   batchResults.innerHTML = "";
 }
 
+function resetSingleForm() {
+  form.reset();
+  updateImagePreview(imageInput, selectedFile, singleImagePreview);
+  hideMessage(formMessage);
+  clearResults();
+  imageInput.focus();
+}
+
+function resetBatchForm() {
+  batchItemsContainer.querySelectorAll(".image-preview").forEach((previewImage) => {
+    if (previewImage.dataset.previewUrl) {
+      URL.revokeObjectURL(previewImage.dataset.previewUrl);
+    }
+  });
+  batchItemsContainer.innerHTML = "";
+  batchItemCounter = 0;
+  addBatchItem();
+  hideMessage(batchMessage);
+  clearResults();
+  batchItemsContainer.querySelector('input[name="image"]')?.focus();
+}
+
 function setLoading(isLoading, title = "Checking...", text = "This may take a few seconds.") {
+  if (loadingSlowTimer) {
+    window.clearTimeout(loadingSlowTimer);
+    loadingSlowTimer = null;
+  }
+
   submitButton.disabled = isLoading;
   batchSubmitButton.disabled = isLoading;
   addBatchItemButton.disabled = isLoading;
@@ -457,6 +512,12 @@ function setLoading(isLoading, title = "Checking...", text = "This may take a fe
   loadingTitle.textContent = title;
   loadingText.textContent = text;
   loadingState.hidden = !isLoading;
+
+  if (isLoading) {
+    loadingSlowTimer = window.setTimeout(() => {
+      loadingText.textContent = "First request after idle can take ~10 s while the server wakes up.";
+    }, 3000);
+  }
 }
 
 function escapeHtml(value) {
