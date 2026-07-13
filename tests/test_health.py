@@ -13,4 +13,5 @@ def test_health_returns_ok() -> None:
         "status": "ok",
         "service": "ttb-label-verification",
         "version": "0.0.1",
+        "environment": "production",
     }

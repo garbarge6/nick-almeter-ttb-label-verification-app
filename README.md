@@ -119,17 +119,17 @@ uv run python -m pytest
 
 ## Environment Variables
 
-```text
-OPENAI_API_KEY=required in local/deployed environment
-APP_ENV=production
-APP_VERSION=0.0.1
-VISION_MODEL=gpt-4o-mini
-VISION_TIMEOUT_SECONDS=4
-VISION_IMAGE_MAX_SIDE=1200
-VISION_JPEG_QUALITY=76
-BATCH_MAX_ITEMS=10
-BATCH_CONCURRENCY_LIMIT=3
-```
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `OPENAI_API_KEY` | yes | - | Auth for the OpenAI Responses API; read by the OpenAI SDK from the process environment. |
+| `VISION_MODEL` | no | `gpt-4o-mini` | Model name for label extraction. |
+| `VISION_TIMEOUT_SECONDS` | no | `4` | Per-request timeout on the vision call. |
+| `VISION_IMAGE_MAX_SIDE` | no | `1200` | Preprocessing downscale target for the longest image side. |
+| `VISION_JPEG_QUALITY` | no | `76` | Preprocessing JPEG quality. |
+| `BATCH_MAX_ITEMS` | no | `10` | Per-request batch cap. |
+| `BATCH_CONCURRENCY_LIMIT` | no | `3` | Semaphore bound on concurrent vision calls. |
+| `APP_ENV` | no | `production` | Reported in `/health` as the runtime environment label. |
+| `APP_VERSION` | no | `0.0.1` | Reported in `/health` and FastAPI metadata. |
 
 ## Deployment
 
@@ -155,7 +155,7 @@ Returns service health JSON.
 Multipart form fields:
 
 ```text
-image: PNG, JPG, or WebP label image
+image: image file selected by the user
 application_data: JSON string matching ApplicationData
 ```
 
@@ -163,7 +163,7 @@ Returns:
 
 ```text
 verification: per-field results, overall_verdict, and latency_ms
-extracted_label: structured extracted fields
+extracted_label: structured extracted fields plus raw_text and extraction_confidence
 latency_ms: endpoint latency
 ```
 
@@ -185,24 +185,134 @@ summary.needs_review
 results[] with individual details
 ```
 
-One bad label does not fail the whole batch.
+One bad label does not fail the whole batch; it appears as a failed item in `results[]` while the summary keeps the three spec keys.
+
+## 8. API Examples
+
+Single-label request:
+
+```bash
+curl -X POST https://nick-almeter-ttb-label-verification-app.onrender.com/verify \
+  -F "image=@samples/sample-label.png" \
+  -F 'application_data={"brand_name":"ACME WINE","product_class":"Cabernet Sauvignon","producer_name":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}'
+```
+
+Single-label expected response shape:
+
+```json
+{
+  "verification": {
+    "overall_verdict": "APPROVED",
+    "fields": [
+      {
+        "field": "brand_name",
+        "match_type": "fuzzy",
+        "expected": "ACME WINE",
+        "found": "acme wine",
+        "status": "PASS"
+      }
+    ],
+    "latency_ms": 1234
+  },
+  "extracted_label": {
+    "brand_name": "acme wine",
+    "product_class": "cabernet sauvignon",
+    "producer_name": "Acme Winery",
+    "country_of_origin": "United States",
+    "abv": "45% Alc./Vol. (90 Proof)",
+    "net_contents": "750ml",
+    "government_warning": "GOVERNMENT WARNING: ...",
+    "raw_text": "Visible label text used for extraction",
+    "extraction_confidence": 0.97
+  },
+  "latency_ms": 1234
+}
+```
+
+Batch request with two labels:
+
+```bash
+curl -X POST https://nick-almeter-ttb-label-verification-app.onrender.com/verify/batch \
+  -F "images=@samples/sample-label.png" \
+  -F "images=@samples/sample-label.png" \
+  -F 'items=[{"client_id":"label-1","image_index":0,"application_data":{"brand_name":"ACME WINE","product_class":"Cabernet Sauvignon","producer_name":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}},{"client_id":"label-2","image_index":1,"application_data":{"brand_name":"WRONG BRAND","product_class":"Cabernet Sauvignon","producer_name":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}}]'
+```
+
+Batch expected response shape:
+
+```json
+{
+  "summary": {
+    "passed": 1,
+    "needs_review": 1,
+    "total": 2
+  },
+  "results": [
+    {
+      "client_id": "label-1",
+      "filename": "sample-label.png",
+      "status": "COMPLETED",
+      "verification": {
+        "overall_verdict": "APPROVED",
+        "fields": [
+          {
+            "field": "brand_name",
+            "match_type": "fuzzy",
+            "expected": "ACME WINE",
+            "found": "acme wine",
+            "status": "PASS"
+          }
+        ],
+        "latency_ms": 1234
+      },
+      "extracted_label": {
+        "raw_text": "Visible label text used for extraction",
+        "extraction_confidence": 0.97
+      },
+      "latency_ms": 1234,
+      "error": null
+    }
+  ]
+}
+```
+
+Error responses use FastAPI's `detail` wrapper with a stable inner error object:
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "invalid_file_type",
+      "message": "Please upload an image file."
+    }
+  }
+}
+```
+
+The contract error object is:
+
+```json
+{"error":{"code":"invalid_file_type","message":"Please upload an image file."}}
+```
 
 ## Matching Approach
 
 1. The vision service extracts a structured `ExtractedLabel`.
 2. Pydantic validates the output shape.
 3. The comparison engine evaluates each field.
-4. Any failed field makes the overall verdict `NEEDS_REVIEW`.
+4. Any failed field makes the overall verdict `NEEDS_REVIEW`; otherwise the verdict is `APPROVED`.
 
-Field strategies:
+## Comparison Rules
 
-```text
-Brand/Product/Producer: fuzzy normalized text
-Country: synonym normalization
-ABV: numeric percent normalization
-Bottle Size: unit normalization to milliliters
-Government Warning: exact case-sensitive string match
-```
+| Field | Rule |
+| --- | --- |
+| Brand Name | Fuzzy normalized text comparison with threshold `85.0`. Common legal suffixes such as `LLC`, `Inc`, and `Company` are ignored; short subset traps like `ACME` vs `ACME RESERVE SPECIAL EDITION` fail. |
+| Product Class | Fuzzy normalized text comparison with threshold `85.0`. |
+| Producer Name | Fuzzy normalized text comparison with threshold `85.0`; common legal suffixes are ignored. |
+| Country of Origin | Text is normalized and checked against a small synonym map, e.g. `USA` and `United States` both normalize to `united states`. |
+| Alcohol % | Numeric percent comparison with tolerance `+/- 0.1`; proof text is converted to ABV, so `90 Proof` becomes `45.0`. |
+| Bottle Size | Unit-normalized milliliter comparison with tolerance `+/- 1 mL`; `0.75 L`, `75 cl`, and `750 ml` normalize to the same value. |
+| Government Warning | Exact, case-sensitive string comparison. No punctuation, capitalization, or missing-word correction is applied; whitespace-collapse-only normalization is the only acceptable future relaxation if the spec is changed to allow it. |
 
 ## Tools Used
 
@@ -213,21 +323,39 @@ Government Warning: exact case-sensitive string match
 - uv for dependency management
 - pytest for automated tests
 
+## Approach / Tools
+
+The project was built with an AI-native Plan / Review / Execute cadence using Codex as the coding assistant.
+
+- **Plan:** Codex helped turn the phase requirements into scoped implementation steps, file lists, risks, and verification checks before code changes.
+- **Review:** Codex critiqued plans against hard requirements such as batch upload, the under-5-second target, exact government-warning matching, no database, and environment-only secrets. The human reviewer called out contract drift, accessibility gaps, and README gaps; those review notes overrode convenience choices.
+- **Execute:** Codex made the code and documentation edits, added tests, and ran the local pytest suite. The comparison logic, API DTOs, frontend rendering, and README examples were hand-checked against the stated spec after generation.
+- **Human overrides:** The reviewer explicitly tightened response-contract literals, required schema-lock tests, required batch upload as non-optional, and required usability/accessibility fixes. Those corrections changed earlier AI-generated assumptions such as using `PASS` as an overall verdict and exposing extra batch summary keys.
+- **Hand-written pieces:** The final project structure, test assertions, prompt constraints, API contract mapping, and deployment notes were edited directly in the repo and verified with local tests rather than accepted solely from generated text.
+
 ## Assumptions
 
-- The user provides application data manually.
-- Label images are PNG, JPG, or WebP.
-- Government warning text must match exactly, including capitalization and punctuation.
-- Batch size is capped at 10 labels.
-- Batch processing is concurrent but bounded to control API cost/rate risk.
+- The user provides application data manually for each label.
+- The uploaded file is an image that Pillow and the vision model can read after preprocessing.
+- The deployed environment supplies `OPENAI_API_KEY` and any optional runtime overrides as environment variables.
+- The user is checking TTB-style alcohol labels with the seven fields listed above.
+- Batch requests are independent; there is no saved history or cross-request state.
 
 ## Limitations
 
-- Vision extraction can misread blurry, angled, cropped, or glare-heavy images.
-- Exact warning comparison may fail if OCR misses a colon, capital letter, or punctuation mark.
-- Free-tier hosting can cold start, which may exceed the 5-second target.
+- Vision extraction can misread blurry, angled, cropped, low-resolution, or glare-heavy images.
+- Exact warning comparison may fail if OCR misses a colon, capital letter, punctuation mark, or word.
+- Free-tier hosting can cold start, which may exceed the 5-second target even when warm requests are faster.
 - Batch progress is request-level, not live per-item streaming.
-- No database, saved history, user accounts, or audit trail.
+- No database, saved history, user accounts, audit trail, or manual review queue is included.
+
+## Tradeoffs
+
+- The fuzzy threshold is fixed at `85.0`: high enough to avoid many false approvals, but conservative labels may still require review.
+- Batch size is capped at `10` to limit vision API cost, timeout risk, and free-tier resource spikes.
+- Batch concurrency defaults to `3` to improve throughput without launching every vision request at once.
+- The API keeps failed batch items in `results[]` instead of adding extra summary keys, so the summary remains the spec shape `{passed, needs_review, total}`.
+- The frontend is plain HTML/CSS/JavaScript to reduce deployment complexity; it gives up richer framework tooling.
 
 ## Performance Notes
 
@@ -248,12 +376,25 @@ processed size: 1200 x 840
 processed bytes median: 202,986
 ```
 
-Live single-label latency must be measured after deployment with:
+Live single-label latency should be measured after deployment with at least 20 runs so p95 is meaningful:
 
 ```powershell
-uv run python scripts/run_phase6_live_checklist.py https://nick-almeter-ttb-label-verification-app.onrender.com path\to\sample-label.png --runs 3
+uv run python scripts/run_phase6_live_checklist.py https://nick-almeter-ttb-label-verification-app.onrender.com samples/sample-label.png --runs 20
 ```
 
+Latest 20-run Render measurement, recorded July 13, 2026:
+
+```text
+runs: 20
+wall p50: 7163 ms
+wall p95: 13888 ms
+wall max: 13957 ms
+API p50: 2933 ms
+API p95: 9483 ms
+under 5000 ms target: false
+```
+
+The latest live run shows the deployed Render service still needs performance work and redeployment of the current local API contract. Several live calls returned timeout-shaped responses, and the live batch summary still exposed old keys that the local tests now forbid.
 ## Test Images
 
 The repo includes `samples/sample-label.png` as a simple synthetic smoke-test image. It is not official TTB data.
@@ -287,20 +428,23 @@ Live checklist against Render:
 
 ```text
 Live URL: https://nick-almeter-ttb-label-verification-app.onrender.com
-Single-label runs, wall ms: 11099, 4084, 4667
-Single-label p50 wall ms: 4667
-Single-label max wall ms: 11099
-API latency ms: 9248, 3369, 4010
-Single-label verdicts: NEEDS_REVIEW, NEEDS_REVIEW, NEEDS_REVIEW
+Recorded: July 13, 2026
+Single-label runs, wall ms: 5263, 2680, 2529, 3196, 3239, 2522, 2864, 3392, 13046, 13957, 7009, 13784, 7318, 13680, 7647, 13546, 13614, 13760, 13884, 2638
+Single-label p50 wall ms: 7163
+Single-label p95 wall ms: 13888
+Single-label max wall ms: 13957
+API latency ms: 3721, 2407, 2284, 2933, 2674, 2247, 2610, 3079, 12663, null, 6737, null, 7001, null, 7363, null, null, null, null, 2361
+API p50 ms: 2933
+API p95 ms: 9483
 Under 5000 ms for all runs: false
-Mismatch: 200, NEEDS_REVIEW, 8337 ms
-Imperfect image: 200, NEEDS_REVIEW, 3451 ms
+Mismatch: 504, 13871 ms
+Imperfect image: 200, 7149 ms
 Wrong file type: 400, readable invalid_file_type error
 Empty submit: 422, readable invalid_request error
-Batch summary: total 3, passed 0, needs_review 2
+Batch summary from live deployment: total 3, passed 0, needs_review 0, failed_to_process 3, latency 13585 ms
 ```
 
-Performance note: two warm single-label runs completed under 5 seconds, but the first run took 11.1 seconds. The strict under-5-second gate is not fully demonstrated on Render yet, likely due to cold start and/or first vision request overhead.
+Performance note: the latest 20-run live sample does not meet the strict under-5-second gate. The local implementation has the corrected response contract, but the public Render deployment needs to be redeployed and remeasured before final submission.
 
 ## Security
 

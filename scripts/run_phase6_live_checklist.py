@@ -4,7 +4,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from statistics import median
+
 
 import httpx
 from PIL import Image, ImageFilter
@@ -41,6 +41,28 @@ def post_verify(base_url: str, image_path: Path, application: dict[str, object])
     return (time.perf_counter() - start) * 1000, response
 
 
+def percentile(values: list[float], percentile_value: float) -> float:
+    if not values:
+        return 0.0
+
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+
+    rank = (len(ordered) - 1) * percentile_value
+    lower = int(rank)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = rank - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * weight
+
+
+def verification_verdict(payload: dict[str, object]) -> object:
+    verification = payload.get("verification", {})
+    if isinstance(verification, dict):
+        return verification.get("overall_verdict") or verification.get("verdict")
+    return None
+
+
 def make_blurry_copy(image_path: Path) -> Path:
     image = Image.open(image_path).convert("RGB").filter(ImageFilter.GaussianBlur(radius=2.5))
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
@@ -52,7 +74,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Phase 6 checklist against a deployed URL.")
     parser.add_argument("base_url", help="Deployed base URL, e.g. https://example.onrender.com")
     parser.add_argument("image", type=Path, help="PNG/JPG/WebP sample label image")
-    parser.add_argument("--runs", type=int, default=3, help="Valid single-label latency runs")
+    parser.add_argument("--runs", type=int, default=20, help="Valid single-label latency runs; use 20 or more for p95")
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
@@ -66,14 +88,17 @@ def main() -> None:
         wall_ms, response = post_verify(base_url, image_path, application_data())
         latencies.append(wall_ms)
         payload = response.json()
-        verdicts.append(payload.get("verification", {}).get("verdict"))
+        verdicts.append(verification_verdict(payload))
         api_latencies.append(payload.get("latency_ms"))
     report["single_label_speed"] = {
         "runs": args.runs,
         "wall_ms": [round(value) for value in latencies],
-        "wall_p50_ms": round(median(latencies)),
+        "wall_p50_ms": round(percentile(latencies, 0.50)),
+        "wall_p95_ms": round(percentile(latencies, 0.95)),
         "wall_max_ms": round(max(latencies)),
         "api_latency_ms": api_latencies,
+        "api_p50_ms": round(percentile([value for value in api_latencies if isinstance(value, int | float)], 0.50)),
+        "api_p95_ms": round(percentile([value for value in api_latencies if isinstance(value, int | float)], 0.95)),
         "verdicts": verdicts,
         "under_5000_ms": max(latencies) < 5000,
     }
@@ -82,7 +107,7 @@ def main() -> None:
     report["mismatch"] = {
         "status": mismatch.status_code,
         "wall_ms": round(mismatch_wall),
-        "verdict": mismatch.json().get("verification", {}).get("verdict"),
+        "verdict": verification_verdict(mismatch.json()),
     }
 
     blurry_path = make_blurry_copy(image_path)
@@ -92,7 +117,7 @@ def main() -> None:
             "status": blurry.status_code,
             "wall_ms": round(blurry_wall),
             "readable_error": blurry.json().get("detail", {}).get("error", {}).get("message"),
-            "verdict": blurry.json().get("verification", {}).get("verdict"),
+            "verdict": verification_verdict(blurry.json()),
         }
     finally:
         blurry_path.unlink(missing_ok=True)

@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.verify import router as verify_router
 
 
+APP_ENV = os.getenv("APP_ENV", "production")
 APP_VERSION = os.getenv("APP_VERSION", "0.0.1")
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -43,6 +44,7 @@ def health() -> dict[str, str]:
         "status": "ok",
         "service": "ttb-label-verification",
         "version": APP_VERSION,
+        "environment": APP_ENV,
     }
 
 
