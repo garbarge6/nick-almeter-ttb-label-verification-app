@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: nick-almeter-ttb-label-verification-app
+    name: nick-almeter-ttb-label-verification-app-tjj2
     env: python
     plan: free
     buildCommand: uv sync --locked --no-dev

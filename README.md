@@ -4,8 +4,8 @@ A stateless proof-of-concept for checking alcohol label images against applicati
 
 ## Live Demo
 
-- Live URL: https://nick-almeter-ttb-label-verification-app.onrender.com
-- Health check: https://nick-almeter-ttb-label-verification-app.onrender.com/health
+- Live URL: https://nick-almeter-ttb-label-verification-app-tjj2.onrender.com
+- Health check: https://nick-almeter-ttb-label-verification-app-tjj2.onrender.com/health
 
 
 ## How To Use The App
@@ -31,7 +31,7 @@ The app verifies these seven fields:
 - Bottle Size
 - Government Warning
 
-The government warning is checked as an exact, case-sensitive string match. Other fields use normalization or fuzzy comparison where appropriate.
+The government warning is checked as an exact, case-sensitive string match after whitespace collapse. Other fields use normalization or fuzzy comparison where appropriate.
 
 ## Requirements Covered
 
@@ -143,7 +143,7 @@ Health check path: /health
 
 Set `OPENAI_API_KEY` in the host dashboard or Render blueprint secret prompt only. Do not commit `.env`.
 
-Cold-start disclaimer: the committed `render.yaml` uses Render free tier for reproducibility, and the latest live measurement shows cold or idle requests can exceed the strict 5-second target. The UI shows a delayed message after about 3 seconds (`First request after idle can take ~10 s while the server wakes up.`), so reviewers see the wait as a known free-tier cold-start limitation rather than a broken form. Meeting the strict deployed under-5-second gate requires a paid Always On instance or equivalent hosting that does not sleep.
+Cold-start disclaimer: the committed `render.yaml` uses Render free tier for reproducibility. The latest live run on the active deployment stayed under the 5-second target, and the UI still shows a delayed message after about 3 seconds (`First request after idle can take ~10 s while the server wakes up.`) so reviewers understand any future free-tier wake-up delay as a hosting limitation rather than a broken form.
 
 ## API
 
@@ -193,7 +193,7 @@ One bad label does not fail the whole batch; it appears as a failed item in `res
 Single-label request:
 
 ```bash
-curl -X POST https://nick-almeter-ttb-label-verification-app.onrender.com/verify \
+curl -X POST https://nick-almeter-ttb-label-verification-app-tjj2.onrender.com/verify \
   -F "image=@samples/sample-label.png" \
   -F 'application_data={"brand_name":"ACME WINE","class_type":"Cabernet Sauvignon","producer":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}'
 ```
@@ -233,7 +233,7 @@ Single-label expected response shape:
 Batch request with two labels:
 
 ```bash
-curl -X POST https://nick-almeter-ttb-label-verification-app.onrender.com/verify/batch \
+curl -X POST https://nick-almeter-ttb-label-verification-app-tjj2.onrender.com/verify/batch \
   -F "images=@samples/sample-label.png" \
   -F "images=@samples/sample-label.png" \
   -F 'items=[{"client_id":"label-1","image_index":0,"application_data":{"brand_name":"ACME WINE","class_type":"Cabernet Sauvignon","producer":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}},{"client_id":"label-2","image_index":1,"application_data":{"brand_name":"WRONG BRAND","class_type":"Cabernet Sauvignon","producer":"Acme Winery LLC","country_of_origin":"USA","abv":"45%","net_contents":"750 mL","government_warning":"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."}}]'
@@ -313,7 +313,7 @@ The contract error object is:
 | Country of Origin | Text is normalized and checked against a small synonym map, e.g. `USA` and `United States` both normalize to `united states`. |
 | Alcohol % | Numeric percent comparison with tolerance `+/- 0.1`; proof text is converted to ABV, so `90 Proof` becomes `45.0`. |
 | Bottle Size | Unit-normalized milliliter comparison with tolerance `+/- 1 mL`; `0.75 L`, `75 cl`, and `750 ml` normalize to the same value. |
-| Government Warning | Exact, case-sensitive string comparison. No punctuation, capitalization, or missing-word correction is applied; whitespace-collapse-only normalization is the only acceptable future relaxation if the spec is changed to allow it. |
+| Government Warning | Exact, case-sensitive string comparison after whitespace collapse. No punctuation, capitalization, or missing-word correction is applied. |
 
 ## Tools Used
 
@@ -380,22 +380,22 @@ processed bytes median: 58,868
 Live single-label latency should be measured after deployment with at least 20 runs so p95 is meaningful:
 
 ```powershell
-uv run python scripts/run_phase6_live_checklist.py https://nick-almeter-ttb-label-verification-app.onrender.com samples/sample-label.png --runs 20
+uv run python scripts/run_phase6_live_checklist.py https://nick-almeter-ttb-label-verification-app-tjj2.onrender.com samples/sample-label.png --runs 20
 ```
 
-Latest 20-run Render measurement, recorded July 13, 2026:
+Latest 20-run Render measurement, recorded July 15, 2026:
 
 ```text
 runs: 20
-wall p50: 7163 ms
-wall p95: 13888 ms
-wall max: 13957 ms
-API p50: 2933 ms
-API p95: 9483 ms
-under 5000 ms target: false
+wall p50: 2853 ms
+wall p95: 3562 ms
+wall max: 3797 ms
+API p50: 2510 ms
+API p95: 3107 ms
+under 5000 ms target: true
 ```
 
-The latest live run shows the deployed Render service still needs performance work and redeployment of the current local API contract. Several live calls returned timeout-shaped responses, and the live batch summary still exposed old keys that the local tests now forbid.
+The latest live run on the active Render deployment meets the under-5-second gate and confirms that `/verify/batch` returns the corrected summary contract.
 ## Test Images
 
 The repo includes `samples/sample-label.png` as a simple synthetic smoke-test image. It is not official TTB data.
@@ -428,24 +428,25 @@ batch summary: total 3, passed 1, needs_review 1
 Live checklist against Render:
 
 ```text
-Live URL: https://nick-almeter-ttb-label-verification-app.onrender.com
-Recorded: July 13, 2026
-Single-label runs, wall ms: 5263, 2680, 2529, 3196, 3239, 2522, 2864, 3392, 13046, 13957, 7009, 13784, 7318, 13680, 7647, 13546, 13614, 13760, 13884, 2638
-Single-label p50 wall ms: 7163
-Single-label p95 wall ms: 13888
-Single-label max wall ms: 13957
-API latency ms: 3721, 2407, 2284, 2933, 2674, 2247, 2610, 3079, 12663, null, 6737, null, 7001, null, 7363, null, null, null, null, 2361
-API p50 ms: 2933
-API p95 ms: 9483
-Under 5000 ms for all runs: false
-Mismatch: 504, 13871 ms
-Imperfect image: 200, 7149 ms
+Live URL: https://nick-almeter-ttb-label-verification-app-tjj2.onrender.com
+Recorded: July 15, 2026
+Single-label runs, wall ms: 3550, 2486, 3095, 2444, 3140, 3214, 2775, 2822, 3797, 2897, 3458, 3127, 2733, 3084, 2522, 2752, 2760, 2767, 2883, 2616
+Single-label p50 wall ms: 2853
+Single-label p95 wall ms: 3562
+Single-label max wall ms: 3797
+API latency ms: 3123, 2195, 2693, 2188, 2878, 2744, 2499, 2348, 3106, 2211, 2657, 2765, 2443, 2793, 2187, 2424, 2520, 2497, 2587, 2360
+API p50 ms: 2510
+API p95 ms: 3107
+p95 under 5000 ms: true
+All runs under 5000 ms: true
+Mismatch: 200, 2656 ms, NEEDS_REVIEW
+Imperfect image: 200, 2615 ms, NEEDS_REVIEW
 Wrong file type: 400, readable invalid_file_type error
 Empty submit: 422, readable invalid_request error
-Batch response shape from live deployment: summary contains total, passed, and needs_review; item-level results carry processing failures.
+Batch response shape from live deployment: summary keys are needs_review, passed, total; summary_contract_ok is true.
 ```
 
-Performance note: the latest 20-run live sample does not meet the strict under-5-second gate. The local implementation has the corrected response contract, but the public Render deployment needs to be redeployed and remeasured before final submission.
+Performance/deployment note: the latest 20-run live sample meets the strict under-5-second gate, and the live batch endpoint is serving the corrected summary contract.
 
 ## Security
 
@@ -482,4 +483,7 @@ no staged secret patterns
 secret grep has no real secrets; code references to api_key are allowed
 README has no placeholders before final submission
 ```
+
+
+
 

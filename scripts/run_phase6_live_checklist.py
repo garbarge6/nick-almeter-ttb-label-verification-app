@@ -72,7 +72,7 @@ def make_blurry_copy(image_path: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Phase 6 checklist against a deployed URL.")
-    parser.add_argument("base_url", help="Deployed base URL, e.g. https://example.onrender.com")
+    parser.add_argument("base_url", help="Deployed base URL, e.g. https://example-tjj2.onrender.com")
     parser.add_argument("image", type=Path, help="PNG/JPG/WebP sample label image")
     parser.add_argument("--runs", type=int, default=20, help="Valid single-label latency runs; use 20 or more for p95")
     args = parser.parse_args()
@@ -100,7 +100,8 @@ def main() -> None:
         "api_p50_ms": round(percentile([value for value in api_latencies if isinstance(value, int | float)], 0.50)),
         "api_p95_ms": round(percentile([value for value in api_latencies if isinstance(value, int | float)], 0.95)),
         "verdicts": verdicts,
-        "under_5000_ms": max(latencies) < 5000,
+        "p95_under_5000_ms": percentile(latencies, 0.95) < 5000,
+        "all_runs_under_5000_ms": max(latencies) < 5000,
     }
 
     mismatch_wall, mismatch = post_verify(base_url, image_path, application_data(brand_name="WRONG BRAND"))
@@ -152,11 +153,20 @@ def main() -> None:
             ],
             timeout=90,
         )
-    report["batch_summary"] = {"status": batch.status_code, "summary": batch.json().get("summary")}
+    batch_summary = batch.json().get("summary")
+    batch_summary_keys = sorted(batch_summary) if isinstance(batch_summary, dict) else []
+    report["batch_summary"] = {
+        "status": batch.status_code,
+        "summary": batch_summary,
+        "summary_keys": batch_summary_keys,
+        "summary_contract_ok": set(batch_summary_keys) == {"passed", "needs_review", "total"},
+    }
 
     print(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":
     main()
+
+
 
